@@ -1,47 +1,49 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"time"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 	"github.com/gophergala2016/etherapis/etherapis/geth"
 )
 
 func main() {
 	datadir, err := ioutil.TempDir("", "etherapis-")
 	if err != nil {
-		log.Fatalf("Failed to create temporary datadir: %v", err)
+		log15.Crit("Failed to create temporary datadir", "error", err)
 	}
 	defer os.RemoveAll(datadir)
 
-	log.Printf("Booting Ethereum client...")
+	log15.Info("Booting Ethereum client...")
 	client, err := geth.New(datadir, geth.TestNet)
 	if err != nil {
-		log.Fatalf("Failed to create Ethereum client: %v", err)
+		log15.Crit("Failed to create Ethereum client", "error", err)
 	}
 	if err := client.Start(); err != nil {
-		log.Fatalf("Failed to start Ethereum client: %v", err)
+		log15.Crit("Failed to start Ethereum client", "error", err)
 	}
 
-	log.Printf("Searching for network peers...")
+	log15.Info("Searching for network peers...")
 	ethereum := new(eth.Ethereum)
 	if err := client.Service(&ethereum); err != nil {
-		log.Fatalf("Failed to retrieve Ethereum service: %v", err)
+		log15.Crit("Failed to retrieve Ethereum service", "error", err)
 	}
-	for len(client.Server().Peers()) == 0 {
+	server := client.Server()
+	for len(server.Peers()) == 0 {
 		time.Sleep(time.Second)
 	}
-	log.Printf("Connected to the network, syncing...")
+	log15.Info("Connected to the network, syncing...")
 	for {
 		head := ethereum.BlockChain().CurrentFastBlock()
-		log.Printf("At block #%d [%x]", head.NumberU64(), head.Hash().Bytes()[:4])
+		log15.Info("Synchronizing network...", "peers", len(server.Peers()), "block", head.NumberU64(), "hash", fmt.Sprintf("%x", head.Hash().Bytes()[:4]))
 		time.Sleep(time.Second)
 	}
-	log.Printf("Terminating Ethereum client...")
+	log15.Info("Terminating Ethereum client...")
 	if err := client.Stop(); err != nil {
-		log.Fatalf("Failed to terminate Ethereum client: %v", err)
+		log15.Crit("Failed to terminate Ethereum client", "error", err)
 	}
 }
