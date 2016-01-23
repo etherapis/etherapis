@@ -15,6 +15,7 @@ import (
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/ethdb"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/event"
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/rlp"
 )
 
 // makeChannelName returns the canonical channel name based on the from and to
@@ -133,6 +134,10 @@ type Cheque struct {
 	Sig           []byte
 	From, To      common.Address
 	Nonce, Amount *big.Int
+}
+
+func (c Cheque) EncodeRLP() ([]byte, error) {
+	return rlp.EncodeToBytes(c)
 }
 
 // SignPayment returns a signed transaction on the current payment channel.
