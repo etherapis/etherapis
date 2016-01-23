@@ -92,14 +92,14 @@ func (c *Contract) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount *
 			to := log.Topics[2]
 		*/
 		channelId := common.BytesToHash(log.Data[0:31])
-		//nonce := log.Data[31:]
+		nonce := common.BytesToBig(log.Data[31:])
 
 		c.channelMu.Lock()
 		defer c.channelMu.Unlock()
 
 		channel, exist := c.channels[channelId]
 		if !exist {
-			channel = NewChannel(c, channelId, from, to)
+			channel = NewChannel(c, channelId, from, to, nonce)
 			c.channels[channelId] = channel
 		}
 		cb(channel)
@@ -114,17 +114,34 @@ type Channel struct {
 	Id       common.Hash
 	key      *ecdsa.PrivateKey
 	from, to common.Address
+	nonce    *big.Int
 
 	chContract *Contract
 }
 
-func NewChannel(c *Contract, id common.Hash, from, to common.Address) *Channel {
+// NewChannel returns a new payment channel.
+func NewChannel(c *Contract, id common.Hash, from, to common.Address, nonce *big.Int) *Channel {
 	return &Channel{
 		Id:         id,
 		from:       from,
 		to:         to,
 		chContract: c,
 	}
+}
+
+type Cheque struct {
+	Sig           []byte
+	From, To      common.Address
+	Nonce, Amount *big.Int
+}
+
+// SignPayment returns a signed transaction on the current payment channel.
+func (c *Channel) SignPayment(amount *big.Int) (Cheque, error) {
+	sig, err := crypto.Sign(sha3(c.Id[:], c.from[:], c.to[:], c.nonce.Bytes(), amount.Bytes()), c.key)
+	if err != nil {
+		return Cheque{}, err
+	}
+	return Cheque{Sig: sig, From: c.from, To: c.to, Nonce: c.nonce, Amount: amount}, nil
 }
 
 const jsonAbi = `[{"constant":false,"inputs":[],"name":"Channel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"isValidChannel","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"}],"name":"createChannel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"recipient","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"channels","outputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"validUntil","type":"uint256"},{"name":"valid","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValidUntil","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verify","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"channel","type":"bytes32"}],"name":"NewChannel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"who","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Claim","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
