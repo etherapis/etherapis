@@ -5,7 +5,6 @@ package geth
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/big"
 	"sync/atomic"
 
@@ -34,6 +33,7 @@ type request struct {
 	Params  []interface{} `json:"params"`  // List of parameters to pass through (keep types simple)
 }
 
+// response is a JSON RPC response package sent back from the API server.
 type response struct {
 	JsonRpc string          `json:"jsonrpc"` // Version of the JSON RPC protocol, always set to 2.0
 	Id      int             `json:"id"`      // Auto incrementing ID number for this request
@@ -67,7 +67,6 @@ func (api *API) request(method string, params []interface{}) (json.RawMessage, e
 	if len(res.Error) > 0 {
 		return nil, errors.New(string(res.Error))
 	}
-	fmt.Printf("%+v -> %+v\n", *req, *res)
 	return res.Result, nil
 }
 
@@ -96,9 +95,9 @@ func (api *API) Syncing() (*SyncStatus, error) {
 		return nil, err
 	}
 	return &SyncStatus{
-		StartingBlock: new(big.Int).SetBytes(common.Hex2Bytes(result["startingBlock"])).Uint64(),
-		CurrentBlock:  new(big.Int).SetBytes(common.Hex2Bytes(result["currentBlock"])).Uint64(),
-		HighestBlock:  new(big.Int).SetBytes(common.Hex2Bytes(result["highestBlock"])).Uint64(),
+		StartingBlock: new(big.Int).SetBytes(common.FromHex(result["startingBlock"])).Uint64(),
+		CurrentBlock:  new(big.Int).SetBytes(common.FromHex(result["currentBlock"])).Uint64(),
+		HighestBlock:  new(big.Int).SetBytes(common.FromHex(result["highestBlock"])).Uint64(),
 	}, nil
 }
 

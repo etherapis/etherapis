@@ -49,7 +49,7 @@ func main() {
 		time.Sleep(250 * time.Millisecond)
 	}
 	log15.Info("Synchronizing the chain...")
-	//	syncStart := time.Now()
+	syncStart := time.Now()
 	for {
 		status, err := api.Syncing()
 		if err != nil {
@@ -58,9 +58,10 @@ func main() {
 		if status == nil {
 			break
 		}
-		//		eta := time.Since(syncStart) * time.Duration(status.HighestBlock-status.StartingBlock) / time.Duration(status.HighestBlock-status.CurrentBlock)
-		log15.Info("Synchronizing network...", "status", status) // "peers", len(server.Peers()), "at", status.CurrentBlock, "height", status.HighestBlock, "eta", eta)
-
+		if status.CurrentBlock > status.StartingBlock {
+			eta := time.Since(syncStart) * time.Duration(status.HighestBlock-status.StartingBlock) / time.Duration(status.CurrentBlock-status.StartingBlock)
+			log15.Info("Synchronizing network...", "peers", len(server.Peers()), "at", status.CurrentBlock, "height", status.HighestBlock, "eta", eta)
+		}
 		time.Sleep(time.Second)
 	}
 	log15.Info("Terminating Ethereum client...")
