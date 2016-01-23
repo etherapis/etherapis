@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"time"
@@ -26,6 +25,10 @@ func main() {
 	if err := client.Start(); err != nil {
 		log15.Crit("Failed to start Ethereum client", "error", err)
 	}
+	api, err := client.Attach()
+	if err != nil {
+		log15.Crit("Failed to attach to node", "error", err)
+	}
 
 	log15.Info("Searching for network peers...")
 	ethereum := new(eth.Ethereum)
@@ -36,10 +39,28 @@ func main() {
 	for len(server.Peers()) == 0 {
 		time.Sleep(time.Second)
 	}
-	log15.Info("Connected to the network, syncing...")
+	log15.Info("Connected to the network, waiting for sync to start...")
 	for {
-		head := ethereum.BlockChain().CurrentFastBlock()
-		log15.Info("Synchronizing network...", "peers", len(server.Peers()), "block", head.NumberU64(), "hash", fmt.Sprintf("%x", head.Hash().Bytes()[:4]))
+		if status, err := api.Syncing(); err != nil {
+			log15.Crit("Failed to retrieve sync status", "error", err)
+		} else if status != nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	log15.Info("Synchronizing the chain...")
+	//	syncStart := time.Now()
+	for {
+		status, err := api.Syncing()
+		if err != nil {
+			log15.Crit("Failed to retrieve sync status", "error", err)
+		}
+		if status == nil {
+			break
+		}
+		//		eta := time.Since(syncStart) * time.Duration(status.HighestBlock-status.StartingBlock) / time.Duration(status.HighestBlock-status.CurrentBlock)
+		log15.Info("Synchronizing network...", "status", status) // "peers", len(server.Peers()), "at", status.CurrentBlock, "height", status.HighestBlock, "eta", eta)
+
 		time.Sleep(time.Second)
 	}
 	log15.Info("Terminating Ethereum client...")

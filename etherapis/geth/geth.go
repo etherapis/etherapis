@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"gopkg.in/inconshreveable/log15.v2"
-
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/accounts"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/cmd/utils"
@@ -19,14 +17,16 @@ import (
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/crypto"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/node"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // Geth is a wrapper around the Ethereum Go client.
 type Geth struct {
 	stack *node.Node // Ethereum network node / protocol stack
 
-	ipcServer *rpc.Server  // RPC server handling the IPC API requests
-	ipcSocket net.Listener // IPC listener socket waiting for inbound connections
+	ipcEndpoint string       // File system (or named pipe) path for the
+	ipcSocket   net.Listener // IPC listener socket waiting for inbound connections
+	ipcServer   *rpc.Server  // RPC server handling the IPC API requests
 }
 
 // New creates a Ethereum client, pre-configured to one of the supported networks.
@@ -97,13 +97,12 @@ func (g *Geth) Start() error {
 		return err
 	}
 	// Attach an IPC endpoint to the stack (this should really have been done by the stack..)
-	endpoint := ""
 	if runtime.GOOS == "windows" {
-		endpoint = common.DefaultIpcPath()
+		g.ipcEndpoint = common.DefaultIpcPath()
 	} else {
-		endpoint = filepath.Join(g.stack.DataDir(), "geth.ipc")
+		g.ipcEndpoint = filepath.Join(g.stack.DataDir(), "geth.ipc")
 	}
-	if g.ipcSocket, err = rpc.CreateIPCListener(endpoint); err != nil {
+	if g.ipcSocket, err = rpc.CreateIPCListener(g.ipcEndpoint); err != nil {
 		return err
 	}
 	// Iterate over all the APIs provided by the stack and expose them
@@ -112,7 +111,7 @@ func (g *Geth) Start() error {
 		log15.Debug("Exposing/extending API...", "namespace", api.Namespace, "runner", fmt.Sprintf("%T", api.Service))
 		g.ipcServer.RegisterName(api.Namespace, api.Service)
 	}
-	log15.Info("Starting IPC listener...", "endpoint", endpoint)
+	log15.Info("Starting IPC listener...", "endpoint", g.ipcEndpoint)
 	go g.handleIPC()
 
 	return nil
@@ -133,6 +132,16 @@ func (g *Geth) Stop() error {
 // then it makes things simpler.
 func (g *Geth) Stack() *node.Node {
 	return g.stack
+}
+
+// Attach connects to the running node's IPC exposed APIs, and returns an Go API
+// interface.
+func (g *Geth) Attach() (*API, error) {
+	client, err := rpc.NewIPCClient(g.ipcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	return &API{client: client}, nil
 }
 
 // handleIPC is the RPC over IPC handler to accept inbound API requests and run
