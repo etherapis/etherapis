@@ -24,8 +24,9 @@ import (
 // Argument holds the name of the argument and the corresponding type.
 // Types are used when packing and testing arguments.
 type Argument struct {
-	Name string
-	Type Type
+	Name    string
+	Type    Type
+	Indexed bool // indexed is only used for Event
 }
 
 func (a *Argument) UnmarshalJSON(data []byte) error {

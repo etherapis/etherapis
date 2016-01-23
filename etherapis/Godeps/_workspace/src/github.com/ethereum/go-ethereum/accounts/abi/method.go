@@ -20,8 +20,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/crypto"
 )
+
+// Event is an event potentially triggered by the EVM's LOG mechanism. The Event
+// holds type information (inputs) about the yielded output
+type Event struct {
+	Id     common.Hash
+	Name   string
+	Inputs []Argument
+}
 
 // Callable method given a `Name` and whether the method is a constant.
 // If the method is `Const` no transaction needs to be created for this

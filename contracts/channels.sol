@@ -10,22 +10,25 @@ contract Channels {
 		bool valid;
 	}
 	mapping(bytes32 => PaymentChannel) public channels;
-	uint id;
 
-	event NewChannel(address indexed owner, bytes32 channel);
-	event Deposit(address indexed owner, bytes32 indexed channel);
+	event NewChannel(address indexed from, address indexed to, bytes32 channel, uint nonce);
+	event Deposit(address indexed from, bytes32 indexed channel);
 	event Claim(address indexed who, bytes32 indexed channel);
 	event Reclaim(bytes32 indexed channel);
 
-	function Channel() {
-		id = 0;
+	function makeChannelName(address from, address to) {
+		return sha3(from, to);
 	}
 
 	function createChannel(address to) {
-		bytes32 channel = sha3(id++);
-		channels[channel] = PaymentChannel(msg.sender, to, 0, msg.value, block.timestamp + 1 days, true);
+		bytes32 channel = sha3(from, to);
+		PaymentChannel ch = channels[channel];
+		if(!ch.valid) {
+			ch = PaymentChannel(msg.sender, to, 0, msg.value, block.timestamp + 1 days, true);
+			channels[channel] = ch
+		}
 
-		NewChannel(msg.sender, channel);
+		NewChannel(msg.sender, to, channel, ch.nonce);
 	}
 
 	// creates a hash using the recipient and value.
