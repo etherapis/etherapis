@@ -71,6 +71,7 @@ func waitSync(freshness time.Duration, api *geth.API) {
 			break
 		}
 		if time.Since(mined) <= freshness {
+			log15.Info("In sync with the network", "block", head, "freshness", time.Since(mined))
 			return
 		}
 		// Seems we're not in sync, wait a bit and retry

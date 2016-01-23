@@ -13,6 +13,7 @@ import (
 var (
 	datadirFlag  = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
 	loglevelFlag = flag.Int("loglevel", 3, "Log level to use for displaying system events")
+	syncFlag     = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
 )
 
 func main() {
@@ -50,8 +51,7 @@ func main() {
 	go monitorSync(api)
 
 	// Make sure we're at least semi recent on the chain before continuing
-	waitSync(5*time.Minute, api)
-	log15.Info("Connected and synced with the network!")
+	waitSync(*syncFlag, api)
 
 	// Clean up for now
 	log15.Info("Terminating Ethereum client...")
