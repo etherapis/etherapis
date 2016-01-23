@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 )
@@ -28,6 +29,7 @@ type Proxy struct {
 	intPort int          // Internal port to forward requests to
 	kind    ProxyType    // Proxy payment authorization type
 	logger  log15.Logger // ID-embedded contextual logger
+	autoid  uint32       // Auto ID to assign to the next request (log tracking)
 }
 
 // New creates a new payment proxy between an internal and external world.
@@ -35,6 +37,7 @@ func New(id int, extPort, intPort int, kind ProxyType) *Proxy {
 	return &Proxy{
 		extPort: extPort,
 		intPort: intPort,
+		kind:    kind,
 		logger:  log15.New("proxy-id", id),
 	}
 }
@@ -44,7 +47,7 @@ func New(id int, extPort, intPort int, kind ProxyType) *Proxy {
 //
 // Note, the method will block forever.
 func (p *Proxy) Start() error {
-	p.logger.Info("Starting up proxy", "external-port", p.extPort, "internal-port", p.intPort)
+	p.logger.Info("Starting up proxy", "external-port", p.extPort, "internal-port", p.intPort, "type", p.kind)
 	return http.ListenAndServe(fmt.Sprintf(":%d", p.extPort), p)
 }
 
@@ -53,6 +56,8 @@ func (p *Proxy) Start() error {
 // request is passed on to the internal service for execution. Otherwise the proxy
 // short circuits the request and sends back an appropriate error.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	reqLogger := p.logger.New("request-id", atomic.AddUint32(&p.autoid, 1))
+
 	// Retrieve all the headers from the original request
 	headers := r.Header
 	var (
@@ -60,7 +65,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sum = headers.Get(AuthorizationHeader)
 		sig = headers.Get(SignatureHeader)
 	)
-	p.logger.Debug("Received an API request", "subscription", sub, "authorized", sum, "signature", sig)
+	reqLogger.Debug("Received an API request", "subscription", sub, "authorized", sum, "signature", sig)
 
 	// Ensure that all payment information are present
 	if sub == "" {
@@ -75,27 +80,59 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing HTTP header: "+SignatureHeader, http.StatusBadRequest)
 		return
 	}
-	// Read the entire request and relay it into the internal API
+	// Process the request and payment based on the proxy type
+	switch p.kind {
+	case CallProxy:
+		// Make sure the consumer authorized the payment for this call
+		// TODO...
+
+		// Execute the API internally and proxy the response
+		reqLogger.Debug("Payment accepted for API invocation")
+		res, err := p.service(r)
+		if err != nil {
+			reqLogger.Error("Failed to process API request", "error", err)
+			http.Error(w, "Failed to execute request", http.StatusInternalServerError)
+			return
+		}
+		defer res.Body.Close()
+		p.forward(w, res)
+
+	case DataProxy:
+		// Since we're paying by the data, retrieve the amount first
+		res, err := p.service(r)
+		if err != nil {
+			reqLogger.Error("Failed to process API request", "error", err)
+			http.Error(w, "Failed to execute request", http.StatusInternalServerError)
+			return
+		}
+		defer res.Body.Close()
+
+		// Make sure the user authorized payment for all the requested data
+		data := res.ContentLength
+		if data > 0 /* TODO */ {
+			reqLogger.Debug("Payment accepted for API stream", "data", data)
+			p.forward(w, res)
+		}
+	}
+}
+
+// service executes the API request in the internal API, and returns the reply,
+// which will either be forwarded as is, or charged per data rate.
+func (p *Proxy) service(r *http.Request) (*http.Response, error) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read input request", http.StatusPartialContent)
-		return
+		return nil, err
 	}
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/%s", p.intPort, r.URL.String()), bytes.NewReader(body))
 	if err != nil {
-		p.logger.Error("Failed to assemble internal HTTP request", "error", err)
-		http.Error(w, "Failed to execute request", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
-	req.Header = headers
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		p.logger.Error("Failed to process inernal HTTP request", "error", err)
-		http.Error(w, "Failed to execute request", http.StatusInternalServerError)
-		return
-	}
-	defer res.Body.Close()
+	req.Header = r.Header
+	return http.DefaultClient.Do(req)
+}
 
+// forward proxies an internal API response into the externl request's writer.
+func (p *Proxy) forward(w http.ResponseWriter, res *http.Response) {
 	for key, values := range res.Header {
 		w.Header().Set(key, values[0])
 	}
