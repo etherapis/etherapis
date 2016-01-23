@@ -18,7 +18,12 @@ var contractAddress = common.HexToAddress("0xaa")
 // deploy the contract, hence the name.
 func GetContract() *Contract {
 	var contract Contract
-	contract.abi = abi.JSON(strings.NewReader(jsonAbi))
+
+	var err error
+	contract.abi, err = abi.JSON(strings.NewReader(jsonAbi))
+	if err != nil {
+		panic(err)
+	}
 
 	return &contract
 }
