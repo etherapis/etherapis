@@ -3,7 +3,10 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
@@ -72,5 +75,29 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing HTTP header: "+SignatureHeader, http.StatusBadRequest)
 		return
 	}
-	fmt.Fprintln(w, "Authorization approved, forwarding request...")
+	// Read the entire request and relay it into the internal API
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read input request", http.StatusPartialContent)
+		return
+	}
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/%s", p.intPort, r.URL.String()), bytes.NewReader(body))
+	if err != nil {
+		p.logger.Error("Failed to assemble internal HTTP request", "error", err)
+		http.Error(w, "Failed to execute request", http.StatusInternalServerError)
+		return
+	}
+	req.Header = headers
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Error("Failed to process inernal HTTP request", "error", err)
+		http.Error(w, "Failed to execute request", http.StatusInternalServerError)
+		return
+	}
+	defer res.Body.Close()
+
+	for key, values := range res.Header {
+		w.Header().Set(key, values[0])
+	}
+	io.Copy(w, res.Body)
 }
