@@ -6,8 +6,8 @@ package geth
 type EthereumNetwork int
 
 const (
-	MainNet = 0 // Frontier live network
-	TestNet = 2 // Morden test network
+	MainNet EthereumNetwork = 0 // Frontier live network
+	TestNet                 = 2 // Morden test network
 )
 
 const (
