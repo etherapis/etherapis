@@ -32,8 +32,8 @@ contract Channels {
 	}
 
 	// creates a hash using the recipient and value.
-	function getHash(bytes32 channel, address recipient, uint nonce, uint value) constant returns(bytes32) {
-		return sha3(channel, recipient, nonce, value);
+	function getHash(bytes32 channel, address sender, address recipient, uint nonce, uint value) constant returns(bytes32) {
+		return sha3(channel, sender, recipient, nonce, value);
 	}
 
 	// verify a message (receipient || value) with the provided signature
@@ -41,14 +41,14 @@ contract Channels {
 		PaymentChannel ch = channels[channel];
 		return  ch.valid &&
 		        ch.validUntil > block.timestamp &&
-		        ch.from == ecrecover(getHash(channel, ch.to, nonce, value), v, r, s);
+		        ch.from == ecrecover(getHash(channel, ch.from, ch.to, nonce, value), v, r, s);
 	}
 
 	// claim funds
 	function claim(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) {
-		if( !verify(channel, nonce, value, v, r, s) ) return;
-		
 		PaymentChannel ch = channels[channel];
+
+		if( !verify(channel, ch.from, ch.to, nonce, value, v, r, s) ) return;
 		if( ch.nonce != nonce ) return;
 		
 		if( value > ch.value ) {
