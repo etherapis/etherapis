@@ -1,0 +1,27 @@
+<html>
+<body>
+  <h1>Direct video streamer</h1>
+  <video width="320" height="240" controls>
+    <source src="http://demo.etherapis.io:8081/elephants-dream.mp4" type="video/mp4">Your browser does not support the video tag.
+  </video>
+
+  <h1>Paywalled video streamer</h1>
+  <video width="320" height="240" controls>
+    <source src="" type="video/mp4">Your browser does not support the video tag.
+  </video>
+
+  <script>
+    var request = new XMLHttpRequest();
+    request.onreadystatechange = function() {
+      if (request.readyState == XMLHttpRequest.DONE ) {
+         console.log(request.getResponseHeader("Content-Length"));
+      }
+    }
+    request.open("HEAD", "http://demo.etherapis.io:8001/elephants-dream.mp4", true);
+    request.setRequestHeader("etherapi-subscripton", "0x01")
+    request.setRequestHeader("etherapi-authorize", "1000")
+    request.setRequestHeader("etherapi-signature", "0x02")
+    request.send();
+  </script>
+</body>
+</html>
