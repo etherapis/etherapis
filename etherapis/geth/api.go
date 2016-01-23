@@ -4,9 +4,11 @@ package geth
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"math/big"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/rpc"
@@ -22,6 +24,7 @@ import (
 type API struct {
 	client rpc.Client // RPC client with a live connection to an Ethereum node
 	autoid uint32     // ID number to use for the next API request
+	lock   sync.Mutex // Singleton access until we get to request multiplexing
 }
 
 // request is a JSON RPC request package assembled internally from the client
@@ -46,6 +49,9 @@ type response struct {
 // This is currently painfully non-concurrent, but it will have to do until we
 // find the time for niceties like this :P
 func (api *API) request(method string, params []interface{}) (json.RawMessage, error) {
+	api.lock.Lock()
+	defer api.lock.Unlock()
+
 	// Ugly hack to serialize an empty list properly
 	if params == nil {
 		params = []interface{}{}
@@ -65,9 +71,39 @@ func (api *API) request(method string, params []interface{}) (json.RawMessage, e
 		return nil, err
 	}
 	if len(res.Error) > 0 {
-		return nil, errors.New(string(res.Error))
+		return nil, fmt.Errorf("remote error: %s", string(res.Error))
 	}
 	return res.Result, nil
+}
+
+// BlockNumber retrieves the current head number of the blockchain.
+func (api *API) BlockNumber() (uint64, error) {
+	res, err := api.request("eth_blockNumber", nil)
+	if err != nil {
+		return 0, err
+	}
+	var hex string
+	if err := json.Unmarshal(res, &hex); err != nil {
+		return 0, err
+	}
+	return new(big.Int).SetBytes(common.FromHex(hex)).Uint64(), nil
+}
+
+// GetBlockTime retrieves the block of the given number from the canonical chain.
+func (api *API) GetBlockTime(num uint64) (time.Time, error) {
+	res, err := api.request("eth_getBlockByNumber", []interface{}{rpc.NewHexNumber(num), true})
+	if err != nil {
+		return time.Time{}, err
+	}
+	result := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(res, &result); err != nil {
+		return time.Time{}, err
+	}
+	var hex string
+	if err := json.Unmarshal(result["timestamp"], &hex); err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(new(big.Int).SetBytes(common.FromHex(hex)).Int64(), 0), nil
 }
 
 // SyncStatus is the current state the network sync is in.

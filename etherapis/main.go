@@ -1,22 +1,34 @@
 package main
 
 import (
-	"io/ioutil"
+	"flag"
 	"os"
+	"path/filepath"
 	"time"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 	"github.com/gophergala2016/etherapis/etherapis/geth"
 )
 
-func main() {
-	datadir, err := ioutil.TempDir("", "etherapis-")
-	if err != nil {
-		log15.Crit("Failed to create temporary datadir", "error", err)
-	}
-	defer os.RemoveAll(datadir)
+var (
+	datadirFlag  = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
+	loglevelFlag = flag.Int("loglevel", 3, "Log level to use for displaying system events")
+)
 
+func main() {
+	// Parse and handle the command line flags
+	flag.Parse()
+
+	log15.Root().SetHandler(log15.LvlFilterHandler(log15.Lvl(*loglevelFlag), log15.StderrHandler))
+
+	datadir := *datadirFlag
+	if datadir == "" {
+		datadir = filepath.Join(os.Getenv("HOME"), ".etherapis")
+	}
+	if err := os.MkdirAll(datadir, 0700); err != nil {
+		log15.Crit("Failed to create data directory: %v", err)
+	}
+	// Assemble and start the Ethereum client
 	log15.Info("Booting Ethereum client...")
 	client, err := geth.New(datadir, geth.TestNet)
 	if err != nil {
@@ -29,41 +41,19 @@ func main() {
 	if err != nil {
 		log15.Crit("Failed to attach to node", "error", err)
 	}
-
+	// Wait for network connectivity and monitor synchronization
 	log15.Info("Searching for network peers...")
-	ethereum := new(eth.Ethereum)
-	if err := client.Stack().Service(&ethereum); err != nil {
-		log15.Crit("Failed to retrieve Ethereum service", "error", err)
-	}
 	server := client.Stack().Server()
 	for len(server.Peers()) == 0 {
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
-	log15.Info("Connected to the network, waiting for sync to start...")
-	for {
-		if status, err := api.Syncing(); err != nil {
-			log15.Crit("Failed to retrieve sync status", "error", err)
-		} else if status != nil {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	log15.Info("Synchronizing the chain...")
-	syncStart := time.Now()
-	for {
-		status, err := api.Syncing()
-		if err != nil {
-			log15.Crit("Failed to retrieve sync status", "error", err)
-		}
-		if status == nil {
-			break
-		}
-		if status.CurrentBlock > status.StartingBlock {
-			eta := time.Since(syncStart) * time.Duration(status.HighestBlock-status.StartingBlock) / time.Duration(status.CurrentBlock-status.StartingBlock)
-			log15.Info("Synchronizing network...", "peers", len(server.Peers()), "at", status.CurrentBlock, "height", status.HighestBlock, "eta", eta)
-		}
-		time.Sleep(time.Second)
-	}
+	go monitorSync(api)
+
+	// Make sure we're at least semi recent on the chain before continuing
+	waitSync(5*time.Minute, api)
+	log15.Info("Connected and synced with the network!")
+
+	// Clean up for now
 	log15.Info("Terminating Ethereum client...")
 	if err := client.Stop(); err != nil {
 		log15.Crit("Failed to terminate Ethereum client", "error", err)

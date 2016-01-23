@@ -150,7 +150,7 @@ func (g *Geth) handleIPC() {
 	for {
 		conn, err := g.ipcSocket.Accept()
 		if err != nil {
-			log15.Error("Unable to accept connection", "error", err)
+			log15.Debug("Unable to accept connection (shutting down?)", "error", err)
 			return
 		}
 		go g.ipcServer.ServeCodec(rpc.NewJSONCodec(conn))
