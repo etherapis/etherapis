@@ -1,27 +1,84 @@
 <html>
+<head>
+  <script>
+    // contentLength executes an async HEAD request to retrieve the data length
+    // of a file served by out API proxy.
+    function contentLength(url, callback) {
+      var request = new XMLHttpRequest();
+      request.onreadystatechange = function() {
+        if (request.readyState == XMLHttpRequest.DONE ) {
+           callback(request.getResponseHeader("Content-Length"));
+        }
+      }
+      request.open("HEAD", url, true);
+      request.send();
+    }
+
+    // pullContent pulls some data content from the API proxy, defined by the start
+    // and end byte interval.
+    function pullContent(url, start, end, callback) {
+      var request = new XMLHttpRequest();
+      request.onreadystatechange = function() {
+        if (request.readyState == XMLHttpRequest.DONE ) {
+           callback(request.response);
+        }
+      }
+      request.open("GET", url, true);
+      request.setRequestHeader("Range", "bytes=" + start + "-" + end);
+      request.setRequestHeader("etherapi-subscripton", "0x01");
+      request.setRequestHeader("etherapi-authorize", "1000");
+      request.setRequestHeader("etherapi-signature", "0x02");
+      request.responseType = "arraybuffer";
+      request.send();
+    }
+
+    // streamVideo starts a media stream based video playback using the paywalled
+    // API endpoint.
+    function streamVideo(url) {
+      // Retrieve the length of the video and start playing when it arrives
+      contentLength(url, function(length) {
+        // Create a new media source to fill with the video stream
+        var player = document.getElementById("videosink");
+        var source = new MediaSource;
+
+        source.addEventListener('sourceopen', function() {
+          // Media source ready, create a video buffer and start filling it
+          var buffer = source.addSourceBuffer('video/mp4; codecs="avc1.64001F, mp4a.40.2"');
+
+          var position = 0;
+          var batch = 256000;
+          var streamer;
+
+          streamer = function() {
+            pullContent(url + "?from="+position, position, position+batch-1, function(data) {
+              buffer.appendBuffer(data);
+              position += batch;
+              if (position < length) {
+                streamer();
+              }
+            });
+          };
+          streamer();
+        });
+        player.src = URL.createObjectURL(source);
+      })
+    }
+  </script>
+</head>
+
 <body>
   <h1>Direct video streamer</h1>
   <video width="320" height="240" controls>
-    <source src="http://demo.etherapis.io:8081/elephants-dream.mp4" type="video/mp4">Your browser does not support the video tag.
+    <source src="http://demo.etherapis.io:8081/frag_bunny.mp4" type="video/mp4">Your browser does not support the video tag.
   </video>
 
   <h1>Paywalled video streamer</h1>
-  <video width="320" height="240" controls>
+  <video id="videosink" width="320" height="240" controls>
     <source src="" type="video/mp4">Your browser does not support the video tag.
   </video>
 
   <script>
-    var request = new XMLHttpRequest();
-    request.onreadystatechange = function() {
-      if (request.readyState == XMLHttpRequest.DONE ) {
-         console.log(request.getResponseHeader("Content-Length"));
-      }
-    }
-    request.open("HEAD", "http://demo.etherapis.io:8001/elephants-dream.mp4", true);
-    request.setRequestHeader("etherapi-subscripton", "0x01")
-    request.setRequestHeader("etherapi-authorize", "1000")
-    request.setRequestHeader("etherapi-signature", "0x02")
-    request.send();
+    streamVideo("http://demo.etherapis.io:8001/frag_bunny.mp4")
   </script>
 </body>
 </html>

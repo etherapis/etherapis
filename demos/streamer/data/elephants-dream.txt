@@ -1,6 +1,0 @@
-The video in this demo is called Elephants Dream and is under a Creative Commons
-license, hence why we dared include it here. Please check their wrbsite for any
-details: https://orange.blender.org/.
-
-We checked it into GitHub so that runnign the demo code is easy and doesn't depend
-on external resources, so please forgive us for doing so.
