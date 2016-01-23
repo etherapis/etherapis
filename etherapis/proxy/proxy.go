@@ -57,7 +57,30 @@ func (p *Proxy) Start() error {
 // short circuits the request and sends back an appropriate error.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqLogger := p.logger.New("request-id", atomic.AddUint32(&p.autoid, 1))
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	// Short circuit CORS pre-flight requests
+	if r.Method == "OPTIONS" {
+		reqLogger.Debug("Allowing CORS pre-flight request")
+		w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
+		return
+	}
+	// Allow head requests through for data APIs to query the content size
+	if r.Method == "HEAD" {
+		reqLogger.Debug("Allowing data HEAD request")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range")
+
+		res, err := p.service(r)
+		if err != nil {
+			reqLogger.Error("Failed to process API request", "error", err)
+			http.Error(w, "Failed to execute request", http.StatusInternalServerError)
+			return
+		}
+		defer res.Body.Close()
+
+		p.forward(w, res)
+		return
+	}
 	// Retrieve all the headers from the original request
 	headers := r.Header
 	var (
@@ -69,14 +92,17 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure that all payment information are present
 	if sub == "" {
+		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+SubscriptionHeader)
 		http.Error(w, "Missing HTTP header: "+SubscriptionHeader, http.StatusBadRequest)
 		return
 	}
 	if sum == "" {
+		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+AuthorizationHeader)
 		http.Error(w, "Missing HTTP header: "+AuthorizationHeader, http.StatusBadRequest)
 		return
 	}
 	if sig == "" {
+		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+SignatureHeader)
 		http.Error(w, "Missing HTTP header: "+SignatureHeader, http.StatusBadRequest)
 		return
 	}
