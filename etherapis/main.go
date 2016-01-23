@@ -29,10 +29,10 @@ func main() {
 
 	log15.Info("Searching for network peers...")
 	ethereum := new(eth.Ethereum)
-	if err := client.Service(&ethereum); err != nil {
+	if err := client.Stack().Service(&ethereum); err != nil {
 		log15.Crit("Failed to retrieve Ethereum service", "error", err)
 	}
-	server := client.Server()
+	server := client.Stack().Server()
 	for len(server.Peers()) == 0 {
 		time.Sleep(time.Second)
 	}
