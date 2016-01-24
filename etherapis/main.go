@@ -64,6 +64,9 @@ func main() {
 
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {
+		// Create the payment vault to hold the various authorizations
+		vault := proxy.NewVault()
+
 		for i, config := range strings.Split(*proxyFlag, ",") {
 			// Split the proxy configuration
 			parts := strings.Split(config, ":")
@@ -92,7 +95,7 @@ func main() {
 				return
 			}
 			// Create and start the new proxy
-			gateway := proxy.New(i, extPort, intPort, kind, new(testVerifier))
+			gateway := proxy.New(i, extPort, intPort, kind, new(testVerifier), vault)
 			go func() {
 				if err := gateway.Start(); err != nil {
 					log15.Crit("Failed to start proxy", "error", err)

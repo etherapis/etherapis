@@ -32,18 +32,20 @@ type Proxy struct {
 	kind    ProxyType // Proxy payment authorization type
 
 	verifier Verifier // Payment verifier that looks into the Ethereum state to validate a transaction
+	vault    *Vault   // Payment vault storing previously accepted authorizations
 
 	logger log15.Logger // ID-embedded contextual logger
 	autoid uint32       // Auto ID to assign to the next request (log tracking)
 }
 
 // New creates a new payment proxy between an internal and external world.
-func New(id int, extPort, intPort int, kind ProxyType, verifier Verifier) *Proxy {
+func New(id int, extPort, intPort int, kind ProxyType, verifier Verifier, vault *Vault) *Proxy {
 	return &Proxy{
 		extPort:  extPort,
 		intPort:  intPort,
 		kind:     kind,
 		verifier: verifier,
+		vault:    vault,
 		logger:   log15.New("proxy-id", id),
 	}
 }
@@ -105,11 +107,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch p.kind {
 	case CallProxy:
 		// Make sure the consumer authorized the payment for this call
-		if !p.verifier.Exists(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider)) {
+		consumer, provider := common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider)
+
+		if !p.verifier.Exists(consumer, provider) {
 			p.fail(w, &verification{Unknown: true, Error: "Non existent API subscription"})
 			return
 		}
-		valid, funded := p.verifier.Verify(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider), auth.Amount, common.Hex2Bytes(auth.Signature))
+		valid, funded := p.verifier.Verify(consumer, provider, auth.Amount, common.Hex2Bytes(auth.Signature))
 		if !valid {
 			p.fail(w, &verification{Error: "Invalid authorization signature"})
 			return
@@ -118,6 +122,17 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fail(w, &verification{Error: "Not enough funds available"})
 			return
 		}
+		if prev := p.vault.Fetch(provider, consumer); prev != nil && prev.Amount+1 > auth.Amount {
+			p.fail(w, &verification{
+				Error:      "Not enough funds authorized",
+				Authorized: prev.Amount,
+				Proof:      prev.Signature,
+				Need:       prev.Amount + 1,
+			})
+			return
+		}
+		p.vault.Store(auth)
+
 		// Execute the API internally and proxy the response
 		reqLogger.Debug("Payment accepted for API invocation")
 		res, err := p.service(r)
