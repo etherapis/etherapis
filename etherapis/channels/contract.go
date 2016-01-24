@@ -69,7 +69,7 @@ func (c *Channels) Stop() {
 
 // Exists returns whether there exists a channel between transactor and beneficiary.
 func (c *Channels) Exists(from, to common.Address) bool {
-	return c.abi.Call(c.exec, "isValidChannel", common.BytesToHash(c.ChannelId(from, to))).(bool)
+	return c.abi.Call(c.exec, "isValidChannel", c.ChannelId(from, to)).(bool)
 }
 
 // Validate validates the ECDSA (curve=secp256k1) signature with the given input
@@ -82,7 +82,7 @@ func (c *Channels) ValidateSig(from, to common.Address, nonce uint64, amount *bi
 		return false
 	}
 
-	channelId := common.BytesToHash(c.ChannelId(from, to))
+	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
 	return c.abi.Call(c.exec, "verifySignature", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
 }
@@ -93,7 +93,7 @@ func (c *Channels) Validate(from, to common.Address, nonce uint64, amount *big.I
 		return false
 	}
 
-	channelId := common.BytesToHash(c.ChannelId(from, to))
+	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
 	return c.abi.Call(c.exec, "verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
 }
@@ -107,7 +107,7 @@ func (c *Channels) Claim(signer common.Address, from, to common.Address, amount 
 		return nil, fmt.Errorf("Invalid signature. Signature requires to be 65 bytes")
 	}
 
-	channelId := common.BytesToHash(c.ChannelId(from, to))
+	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
 
 	txData, err := c.abi.Pack("claim", channelId, 0, amount, signature.v, signature.r, signature.s)
@@ -128,8 +128,8 @@ func (c *Channels) Call(methodName string, v ...interface{}) interface{} {
 }
 
 // ChannelId returns the canonical channel name for transactor and beneficiary
-func (c *Channels) ChannelId(from, to common.Address) []byte {
-	return c.abi.Call(c.exec, "makeChannelId", from, to).([]byte)
+func (c *Channels) ChannelId(from, to common.Address) common.Hash {
+	return common.BytesToHash(c.abi.Call(c.exec, "makeChannelId", from, to).([]byte))
 }
 
 // exec is the executer function callback for the abi `Call` method.
@@ -171,13 +171,14 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 	filter.SetTopics([][]common.Hash{ // TODO refactor, helper
 		[]common.Hash{evId},
 		[]common.Hash{from.Hash()},
+		[]common.Hash{to.Hash()},
 	})
 	filter.SetBeginBlock(0)
 	filter.SetEndBlock(-1)
 	filter.LogsCallback = func(logs vm.Logs) {
 		// tere should really be only one log. TODO this part
 		log := logs[0]
-		// [ event_id, from, to, [channel_id, nonce ] ]
+
 		// TODO: do to and from validation here
 		/*
 			from := log.Topics[1]

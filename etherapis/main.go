@@ -234,7 +234,7 @@ func main() {
 				continue
 			}
 			// Retrieve the current balance on the subscription
-			ethers := contract.Call("getChannelValue", common.BytesToHash(contract.ChannelId(account.Address, provider))).(*big.Int)
+			ethers := contract.Call("getChannelValue", contract.ChannelId(account.Address, provider)).(*big.Int)
 			funds := float64(new(big.Int).Div(ethers, common.Finney).Int64()) / 1000
 
 			fmt.Printf("Account #%d: [0x%x]: subscribed, with %v ether(s) left.\n", i, account.Address, funds)
@@ -296,7 +296,7 @@ func main() {
 		eth.AccountManager().Unlock(from, "")
 
 		to := accounts[1].Address
-		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(contract.ChannelId(from, to)))
+		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", contract.ChannelId(from, to).Hex())
 		log15.Info("checking existence...", "exists", contract.Exists(from, to))
 
 		amount := big.NewInt(10)
