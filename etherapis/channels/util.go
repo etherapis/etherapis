@@ -13,3 +13,9 @@ func sha3(in ...[]byte) []byte {
 	}
 	return crypto.Sha3(out)
 }
+
+// makeChannelName returns the canonical channel name based on the from and to
+// paramaters.
+func makeChannelName(from, to common.Address) []byte {
+	return sha3(from[:], to[:])
+}

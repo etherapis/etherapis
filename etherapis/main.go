@@ -14,6 +14,7 @@ import (
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/accounts"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core/types"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
@@ -292,11 +293,11 @@ func main() {
 type testVerifier struct{}
 
 func (v *testVerifier) Exists(from, to common.Address) bool { return from != to }
-func (v *testVerifier) Verify(from, to common.Address, amount uint64, signature []byte) (bool, bool) {
+func (v *testVerifier) Verify(from, to common.Address, amount *big.Int, signature []byte) (bool, bool) {
 	if len(signature) == 0 {
 		return false, false
 	}
-	if amount > 10000000 {
+	if amount.Cmp(big.NewInt(10000000)) > 0 {
 		return true, false
 	}
 	return true, true
@@ -304,6 +305,41 @@ func (v *testVerifier) Verify(from, to common.Address, amount uint64, signature 
 
 type testCharger struct{}
 
-func (c *testCharger) Charge(from, to common.Address, amount uint64, signature []byte) (string, error) {
-	return "0x7426125287fe1dfa9acc6d79008f0dc9a7e0c292b3387040e37c2a71518d711a", nil
+func (c *testCharger) Charge(from, to common.Address, amount *big.Int, signature []byte) (common.Hash, error) {
+	return common.HexToHash("0x7426125287fe1dfa9acc6d79008f0dc9a7e0c292b3387040e37c2a71518d711a"), nil
+}
+
+type Charger struct {
+	txPool         *core.TxPool
+	channels       *channels.Channels
+	accountManager *accounts.Manager
+	signer         accounts.Account
+}
+
+func NewCharger(signer accounts.Account, txPool *core.TxPool, channels *channels.Channels, am *accounts.Manager) *Charger {
+	return &Charger{txPool: txPool, channels: channels, accountManager: am, signer: signer}
+}
+
+func (c *Charger) Charge(from, to common.Address, amount *big.Int, signature []byte) (common.Hash, error) {
+	tx, err := c.channels.Claim(c.signer.Address, from, to, amount, signature)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	sig, err := c.accountManager.Sign(c.signer, tx.Hash().Bytes())
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	signedTx, err := tx.WithSignature(sig)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	err = c.txPool.Add(signedTx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	return signedTx.Hash(), nil
 }
