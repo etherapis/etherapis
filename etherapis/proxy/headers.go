@@ -30,6 +30,7 @@ type verification struct {
 	Authorized uint64 `json:"authorized,omitempty"` // Last successfully authorized payment amount
 	Proof      string `json:"proof,omitempty"`      // Proof of the last authorization for client verification
 	Need       uint64 `json:"need,omitempty"`       // Amount needed for this call (need = authorized => all ok)
+	Nonce      uint64 `json:"nonce"`                // Nonce required for this call
 	Error      string `json:"error,omitempty"`      // Error message specifically deemed to developer consumption
 }
 
