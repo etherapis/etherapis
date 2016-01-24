@@ -19,6 +19,7 @@ var (
 	loglevelFlag = flag.Int("loglevel", 3, "Log level to use for displaying system events")
 	syncFlag     = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
 	proxyFlag    = flag.String("proxy", "", "Payment proxy configs ext-port:int-port:type (e.g. 80:8080:call,81:8081:data)")
+	chargeFlag   = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
 )
 
 func main() {
@@ -65,7 +66,8 @@ func main() {
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {
 		// Create the payment vault to hold the various authorizations
-		vault := proxy.NewVault()
+		vault := proxy.NewVault(new(testCharger))
+		vault.AutoCharge(*chargeFlag)
 
 		for i, config := range strings.Split(*proxyFlag, ",") {
 			// Split the proxy configuration
@@ -127,4 +129,10 @@ func (v *testVerifier) Verify(from, to common.Address, amount uint64, signature 
 		return true, false
 	}
 	return true, true
+}
+
+type testCharger struct{}
+
+func (c *testCharger) Charge(from, to common.Address, amount uint64, signature []byte) (string, error) {
+	return "0x7426125287fe1dfa9acc6d79008f0dc9a7e0c292b3387040e37c2a71518d711a", nil
 }

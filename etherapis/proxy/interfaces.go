@@ -15,3 +15,12 @@ type Verifier interface {
 	// whether there are enough funds in the payment channel to process this payment.
 	Verify(from, to common.Address, amount uint64, signature []byte) (bool, bool)
 }
+
+// Charger chaaaaarges! :D Fun's aside, this interfaces provides the capability
+// to redeem an authorized payment by the underlying framework.
+type Charger interface {
+	// Charge calls down into the underlying Ethereum contract layer and executes
+	// a payment charging transaction. It returns the hex encoded transaction id
+	// to enable later verification.
+	Charge(from, to common.Address, amount uint64, signature []byte) (string, error)
+}
