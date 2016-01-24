@@ -306,7 +306,7 @@ func main() {
 
 		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider), "ethers", *subFundFlag)
 		pend := make(chan *channels.Channel)
-		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, common.Shannon, func(sub *channels.Channel) { pend <- sub })
+		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, big.NewInt(1), func(sub *channels.Channel) { pend <- sub })
 		if err != nil {
 			log15.Crit("Failed to create subscription", "error", err)
 			return
