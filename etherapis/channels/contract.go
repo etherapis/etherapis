@@ -2,6 +2,7 @@ package channels
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"strings"
 	"sync"
@@ -18,20 +19,24 @@ import (
 )
 
 // contractAddress is the static address on which the contract resides
-var contractAddress = common.HexToAddress("0x69f147dbb7fb3b73d3879621cb4f71227b3c3d8f")
+var contractAddress = common.HexToAddress("0x0ebbdf55e052b633872e1ed3b8e368a82d8269de")
 
-// makeChannelName returns the canonical channel name based on the from and to
-// paramaters.
-func makeChannelName(from, to common.Address) []byte {
-	return sha3(from[:], to[:])
-}
+// signFn is a signer function callback when the contract requires a method to
+// sign the transaction before submission.
+type signFn func(*types.Transaction) (*types.Transaction, error)
 
+// Channels is the channels contract reflecting that on the ethereum network. The
+// channels contract handles all validation and verifications of payments and
+// allows you to redeem cheques.
+//
+// Channels implements the proxy.Verifier and proxy.Charges interfaces.
 type Channels struct {
 	abi        abi.ABI
 	blockchain *core.BlockChain
-	filters    *filters.FilterSystem
-	mux        *event.TypeMux
-	db         ethdb.Database
+
+	filters *filters.FilterSystem
+	mux     *event.TypeMux
+	db      ethdb.Database
 
 	channels  map[common.Hash]*Channel
 	channelMu sync.RWMutex
@@ -62,7 +67,7 @@ func (c *Channels) Stop() {
 	c.filters.Stop()
 }
 
-// Exists returns whether there exists a channel between transactor and beneficiary
+// Exists returns whether there exists a channel between transactor and beneficiary.
 func (c *Channels) Exists(from, to common.Address) bool {
 	return c.abi.Call(c.exec, "isValidChannel", common.BytesToHash(c.ChannelId(from, to))).(bool)
 }
@@ -77,8 +82,33 @@ func (c *Channels) Validate(from, to common.Address, amount *big.Int, sig []byte
 		return false
 	}
 
-	channelId := c.ChannelId(from, to)
-	return c.abi.Call(c.exec, "verify", common.BytesToHash(channelId), 0, amount, sig[64]+27, common.BytesToHash(sig[:32]), common.BytesToHash(sig[32:64])).(bool)
+	channelId := common.BytesToHash(c.ChannelId(from, to))
+	signature := bytesToSignature(sig)
+	return c.abi.Call(c.exec, "verify", channelId, 0, amount, signature.v, signature.r, signature.s).(bool)
+}
+
+// Claim redeems a given signature using the canonical channel. It creates an
+// Ethereum transaction and submits it to the Ethereum network.
+//
+// Chaim returns the unsigned transaction and an error if it failed.
+func (c *Channels) Claim(signer common.Address, from, to common.Address, amount *big.Int, sig []byte) (*types.Transaction, error) {
+	if len(sig) != 65 {
+		return nil, fmt.Errorf("Invalid signature. Signature requires to be 65 bytes")
+	}
+
+	channelId := common.BytesToHash(c.ChannelId(from, to))
+	signature := bytesToSignature(sig)
+
+	txData, err := c.abi.Pack("claim", channelId, 0, amount, signature.v, signature.r, signature.s)
+	if err != nil {
+		return nil, err
+	}
+
+	statedb, _ := c.blockchain.State()
+	gasPrice := big.NewInt(50000000000)
+	gasLimit := big.NewInt(250000)
+	tx := types.NewTransaction(statedb.GetNonce(signer), contractAddress, gasPrice, gasLimit, new(big.Int), txData)
+	return tx, nil
 }
 
 // helper forwarder
@@ -196,4 +226,4 @@ func (c *Channel) SignPayment(amount *big.Int) (Cheque, error) {
 	return Cheque{Sig: sig, From: c.from, To: c.to, Nonce: c.nonce, Amount: amount}, nil
 }
 
-const jsonAbi = `[{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"}],"name":"makeChannelName","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"isValidChannel","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"}],"name":"createChannel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"channels","outputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"validUntil","type":"uint256"},{"name":"valid","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValidUntil","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verify","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"NewChannel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
+const jsonAbi = `[{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"}],"name":"makeChannelName","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"isValidChannel","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"channels","outputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"price","type":"uint256"},{"name":"value","type":"uint256"},{"name":"validUntil","type":"uint256"},{"name":"valid","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValidUntil","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verify","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"price","type":"uint256"}],"name":"createChannel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"},{"indexed":false,"name":"price","type":"uint256"}],"name":"NewChannel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Reclaim","type":"event"}]`

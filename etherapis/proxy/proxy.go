@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"sync/atomic"
 
@@ -113,7 +114,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fail(w, &verification{Unknown: true, Error: "Non existent API subscription"})
 			return
 		}
-		valid, funded := p.verifier.Verify(consumer, provider, auth.Amount, common.Hex2Bytes(auth.Signature))
+		valid, funded := p.verifier.Verify(consumer, provider, new(big.Int).SetUint64(auth.Amount), common.Hex2Bytes(auth.Signature))
 		if !valid {
 			p.fail(w, &verification{Error: "Invalid authorization signature"})
 			return

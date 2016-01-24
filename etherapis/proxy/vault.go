@@ -4,6 +4,7 @@
 package proxy
 
 import (
+	"math/big"
 	"sync"
 	"time"
 
@@ -110,11 +111,11 @@ func (v *accountVault) Fetch(consumer common.Address) *authorization {
 func (v *accountVault) Charge(charger Charger) {
 	v.lock.RLock()
 	for _, auth := range v.pends {
-		tx, err := charger.Charge(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider), auth.Amount, common.Hex2Bytes(auth.Signature))
+		tx, err := charger.Charge(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider), new(big.Int).SetUint64(auth.Amount), common.Hex2Bytes(auth.Signature))
 		if err != nil {
 			log15.Error("Failed to charge payment", "authorization", auth, "error", err)
 		} else {
-			log15.Info("Payment charged", "tx", "http://testnet.etherscan.io/tx/"+tx)
+			log15.Info("Payment charged", "tx", "http://testnet.etherscan.io/tx/"+tx.Hex())
 		}
 	}
 	v.lock.RUnlock()
