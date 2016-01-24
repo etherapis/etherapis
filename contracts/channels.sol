@@ -48,7 +48,7 @@ contract Channels {
 		if( !verifySignature(channel, nonce, value, v, r, s) ) return false;
 
 		PaymentChannel ch = channels[channel];
-		if( ch.nonce != nonce || ch.value > value ) return false;
+		if( ch.nonce != nonce ) return false;
 
 		return true;
 	}

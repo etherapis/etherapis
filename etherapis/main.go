@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -46,6 +47,7 @@ var (
 	testFlag    = flag.Bool("test", false, "Runs using the default test vectors for signing and verifying signatures")
 	accGenFlag  = flag.Int("gen", 0, "Generates a batch of (empty) demo accounts and dumps their keys")
 	accLiveFlag = flag.Bool("live", false, "Requests live account generation (funded and uloaded)")
+	signFlag    = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
 )
 
 func main() {
@@ -102,6 +104,43 @@ func main() {
 	}
 	// Depending on the flags, execute different things
 	switch {
+	case *signFlag != "":
+		var message struct {
+			Provider string
+			Nonce    uint64
+			Amount   uint64
+		}
+		if err := json.Unmarshal([]byte(*signFlag), &message); err != nil {
+			log15.Crit("Failed to decode data", "error", err)
+			return
+		}
+		fmt.Println(message)
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil {
+			log15.Crit("Failed retrieving accounts", "err", err)
+		}
+		if len(accounts) == 0 {
+			log15.Crit("Signing data requires at least one account", "len", len(accounts))
+			return
+		}
+		account := accounts[0]
+
+		from := account.Address
+		to := common.HexToAddress(message.Provider)
+
+		hash := contract.Call("getHash", from, to, message.Nonce, message.Amount).([]byte)
+		log15.Info("getting hash", "hash", common.ToHex(hash))
+
+		eth.AccountManager().Unlock(from, "")
+		sig, err := eth.AccountManager().Sign(account, hash)
+		if err != nil {
+			log15.Crit("signing vailed", "err", err)
+			return
+		}
+		log15.Info("generated signature", "sig", common.ToHex(sig))
+
+		return
+
 	case *importFlag != "":
 		// Account import, parse the provided .json file and ensure it's proper
 		manager := eth.AccountManager()
@@ -295,11 +334,11 @@ func main() {
 		from := accounts[0].Address
 		eth.AccountManager().Unlock(from, "")
 
-		to := accounts[1].Address
+		to := accounts[0].Address
 		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", contract.ChannelId(from, to).Hex())
 		log15.Info("checking existence...", "exists", contract.Exists(from, to))
 
-		amount := big.NewInt(10)
+		amount := big.NewInt(1)
 		hash := contract.Call("getHash", from, to, 0, amount).([]byte)
 		log15.Info("signing data", "to", to.Hex(), "amount", amount, "hash", common.ToHex(hash))
 
@@ -314,18 +353,21 @@ func main() {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
+			return
 		}
 
 		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if contract.Validate(from, to, 0, amount, sig) {
+		if valid, _ := contract.Verify(from, to, 0, amount, sig); valid {
 			log15.Info("payment was valid and was verified by the EVM")
 		} else {
 			log15.Crit("payment was invalid")
+			return
 		}
 
 		log15.Info("verifying invalid payment", "nonce", 1)
-		if contract.Validate(from, to, 1, amount, sig) {
+		if valid, _ := contract.Verify(from, to, 1, amount, sig); valid {
 			log15.Crit("payment was valid")
+			return
 		} else {
 			log15.Info("payment was invalid")
 		}
@@ -333,8 +375,20 @@ func main() {
 
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {
+		// Subscription requested, make sure all the details are provided
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil || len(accounts) < *subAccFlag {
+			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "requested", *subAccFlag, "error", err)
+			return
+		}
+		account := accounts[*subAccFlag]
+		if err := eth.AccountManager().Unlock(account.Address, ""); err != nil {
+			log15.Crit("Failed to unlock provider account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
+			return
+		}
+
 		// Create the payment vault to hold the various authorizations
-		vault := proxy.NewVault(new(testCharger))
+		vault := proxy.NewVault(NewCharger(account, eth.TxPool(), contract, eth.AccountManager()))
 		vault.AutoCharge(*chargeFlag)
 
 		for i, config := range strings.Split(*proxyFlag, ",") {
@@ -365,7 +419,7 @@ func main() {
 				return
 			}
 			// Create and start the new proxy
-			gateway := proxy.New(i, extPort, intPort, kind, new(testVerifier), vault)
+			gateway := proxy.New(i, extPort, intPort, kind, contract, vault)
 			go func() {
 				if err := gateway.Start(); err != nil {
 					log15.Crit("Failed to start proxy", "error", err)
