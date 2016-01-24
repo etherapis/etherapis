@@ -17,15 +17,15 @@ contract Channels {
 	event Redeem(bytes32 indexed channel, uint nonce);
 	event Reclaim(bytes32 indexed channel);
 
-	function makeChannelName(address from, address to) constant returns(bytes32) {
+	function makeChannelId(address from, address to) constant returns(bytes32) {
 		return sha3(from, to);
 	}
 
 	function createChannel(address to, uint256 price) {
-		bytes32 channel = makeChannelName(msg.sender, to)
+		bytes32 channel = makeChannelId(msg.sender, to);
 		PaymentChannel ch = channels[channel];
 		if(!ch.valid) {
-			channels[channel] = PaymentChannel(msg.sender, to, 0, price, msg.value, block.timestamp + 1 days, true);
+			channels[channel] = PaymentChannel(msg.sender, to, 0, price, msg.value, block.timestamp + 7 days, true);
 		}
 
 		NewChannel(msg.sender, to, channel, ch.nonce, price);
@@ -33,25 +33,33 @@ contract Channels {
 
 	// creates a hash using the recipient and value.
 	function getHash(address from, address to, uint nonce, uint value) constant returns(bytes32) {
-		return sha3(from, to, /*TODO: next version nonce,*/ value);
+		return sha3(from, to, nonce,value);
 	}
 
 	// verify a message (receipient || value) with the provided signature
-	function verify(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
+	function verifySignature(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
 		PaymentChannel ch = channels[channel];
 		return  ch.valid &&
 		        ch.validUntil > block.timestamp &&
 		        ch.from == ecrecover(getHash(ch.from, ch.to, nonce, value), v, r, s);
 	}
 
+	function verifyPayment(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
+		if( !verifySignature(channel, nonce, value, v, r, s) ) return false;
+
+		PaymentChannel ch = channels[channel];
+		if( ch.nonce != nonce || ch.value > value ) return false;
+
+		return true;
+	}
+
 	// claim funds
 	function claim(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) {
-		if( !verify(channel, nonce, value, v, r, s) ) return;
+		if( !verifySignature(channel, nonce, value, v, r, s) ) return;
 		
 		PaymentChannel ch = channels[channel];
 		
-		// TODO: next version
-		//if( ch.nonce != nonce ) return;
+		if( ch.nonce != nonce ) return;
 		
 		if( value > ch.value ) {
 			ch.to.send(ch.value);
@@ -63,8 +71,7 @@ contract Channels {
 
 		Redeem(channel, ch.nonce);
 
-		// TODO: next version
-		//channels[channel].nonce++;
+		channels[channel].nonce++;
 	}
 
 	function deposit(bytes32 channel) {
@@ -89,6 +96,14 @@ contract Channels {
 		return channels[channel].value;
 	}
 
+	function getChannelNonce(bytes32 channel) constant returns(uint256) {
+		return channels[channel].nonce;
+	}
+
+	function getChannelPrice(bytes32 channel) constant returns(uint256) {
+		return channels[channel].price;
+	}
+
 	function getChannelOwner(bytes32 channel) constant returns(address) {
 		return channels[channel].from;
 	}
@@ -101,4 +116,5 @@ contract Channels {
 		return ch.valid && ch.validUntil >= block.timestamp;
 	}
 }
+
 

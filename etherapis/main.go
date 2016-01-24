@@ -217,7 +217,7 @@ func main() {
 		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(channels.ChannelId(from, to)))
 		log15.Info("checking existence...", "exists", channels.Exists(from, to))
 
-		amount := big.NewInt(100)
+		amount := big.NewInt(10)
 		hash := channels.Call("getHash", from, to, 0, amount).([]byte)
 		log15.Info("signing data", "to", to.Hex(), "amount", amount, "hash", common.ToHex(hash))
 
@@ -228,10 +228,24 @@ func main() {
 		}
 		log15.Info("verifying signature", "sig", common.ToHex(sig))
 
-		if channels.Validate(from, to, amount, sig) {
+		if channels.ValidateSig(from, to, 0, amount, sig) {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
+		}
+
+		log15.Info("verifying payment", "sig", common.ToHex(sig))
+		if channels.Validate(from, to, 0, amount, sig) {
+			log15.Info("payment was valid and was verified by the EVM")
+		} else {
+			log15.Crit("payment was invalid")
+		}
+
+		log15.Info("verifying invalid payment", "nonce", 1)
+		if channels.Validate(from, to, 1, amount, sig) {
+			log15.Crit("payment was valid")
+		} else {
+			log15.Info("payment was invalid")
 		}
 	}
 
