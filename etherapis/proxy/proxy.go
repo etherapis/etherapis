@@ -14,6 +14,7 @@ import (
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
+	"github.com/gophergala2016/etherapis/etherapis/channels"
 )
 
 // ProxyType is the various types of proxies that can be created.
@@ -115,7 +116,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fail(w, &verification{Unknown: true, Error: "Non existent API subscription"})
 			return
 		}
-		valid, funded := p.verifier.Verify(consumer, provider, new(big.Int).SetUint64(auth.Amount), common.Hex2Bytes(auth.Signature))
+		log15.Info("verifying payment hash", "hash", common.ToHex(p.verifier.(*channels.Channels).Call("getHash", consumer, provider, auth.Nonce, new(big.Int).SetUint64(auth.Amount)).([]byte)))
+		valid, funded := p.verifier.Verify(consumer, provider, auth.Nonce, new(big.Int).SetUint64(auth.Amount), common.FromHex(auth.Signature))
 		if !valid {
 			p.fail(w, &verification{Error: "Invalid authorization signature"})
 			return
@@ -124,7 +126,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fail(w, &verification{Error: "Not enough funds available"})
 			return
 		}
-		if prev := p.vault.Fetch(provider, consumer); prev != nil && prev.Amount+1 > auth.Amount {
+
+		price := p.verifier.Price(consumer, provider).Uint64()
+		if prev := p.vault.Fetch(provider, consumer); prev != nil && prev.Amount+price > auth.Amount {
 			p.fail(w, &verification{
 				Error:      "Not enough funds authorized",
 				Authorized: prev.Amount,
