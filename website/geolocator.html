@@ -33,6 +33,9 @@
               var dump = document.getElementById('dump');
               dump.innerHTML = JSON.stringify(result, null, 2).split('\n').join("<br>")
 
+              var paydump = document.getElementById('paydump');
+              paydump.innerHTML = "No paywall headers on this query..."
+
               var map = document.getElementById('map');
               map.src = "https://www.google.com/maps/embed/v1/place?q=" + result.latitude + "," + result.longitude + "&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"
           }
@@ -44,9 +47,18 @@
 
       function paidLookup() {
         // Authorize the payment for this request
+        var keyhex = document.getElementById('key').value;
+        if (keyhex.length != 64) {
+          keyhex = "1000000000000000000000000000000000000000000000000000000000000001"
+        }
+        var authstr = document.getElementById('auth').value;
+        var authint = 0;
+        if (authstr.length > 0) {
+          authint = parseInt(authstr);
+        }
         var bc  = require("bitcore-lib");
         var ec  = bc.crypto.ECDSA;
-        var key = bc.PrivateKey("f89b3114e6e65ca687cd7673b9bf83d4e1309b5ec242d47760fc93305a112661");
+        var key = bc.PrivateKey(keyhex);
         var sig = ec.sign(bc.util.buffer.NULL_HASH, key);
 
         ec().set({
@@ -56,16 +68,20 @@
         }).calci()
 
         var sigHex = sig.r.toJSON() + sig.s.toJSON() + "0" + sig.i.toString(16);
-        console.log(ethUtil.publicToAddress(ethUtil.privateToPublic("f89b3114e6e65ca687cd7673b9bf83d4e1309b5ec242d47760fc93305a112661")).toString('hex'))
+        var sender = ethUtil.publicToAddress(ethUtil.privateToPublic(keyhex)).toString('hex')
 
         // Run the actual API request
         var request = new XMLHttpRequest();
         request.onreadystatechange = function() {
           if (request.readyState == XMLHttpRequest.DONE ) {
               var result = JSON.parse(request.response)
+              if ('proof' in result) {
+                result.proof = "... redacted for visibility ..."
+              }
               var header = JSON.parse(request.getResponseHeader("etherapi-verification"))
-              header.proof = "... redacted for visibility ..."
-
+              if (header != undefined && 'proof' in header) {
+                header.proof = "... redacted for visibility ..."
+              }
               var dump = document.getElementById('dump');
               dump.innerHTML = JSON.stringify(result, null, 2).split('\n').join("<br>")
 
@@ -78,7 +94,8 @@
         }
         var host = document.getElementById('host');
         request.open("GET", 'http://demo.etherapis.io:8000?ip='+host.value, true);
-        request.setRequestHeader("etherapi-authorization", '{"consumer": "0x01", "provider": "0x02", "signature": "' + sigHex + '", "amount": 1000}');
+        console.log(authint)
+        request.setRequestHeader("etherapi-authorization", '{"consumer": "' + sender + '", "provider": "0x02", "signature": "' + sigHex + '", "amount": ' + authint + '}');
         request.send();
       }
     </script>
@@ -150,6 +167,22 @@
         <div class="col-md-3"></div>
         <div class="col-md-6">
           <iframe id="map" width="100%" height="360" src="https://www.google.com/maps/embed/v1/place?q=33.9269,-117.8612&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"></iframe>
+        </div>
+      </div>
+      <br>
+      <div class="row">
+        <div class="col-md-3"></div>
+        <div class="col-md-3">
+          <div class="input-group">
+            <span class="input-group-addon" id="basic-addon1">Key</span>
+            <input id="key" type="text" class="form-control" placeholder="private key in hex" aria-describedby="basic-addon1">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="input-group">
+            <span class="input-group-addon" id="basic-addon1">Amount</span>
+            <input id="auth" type="text" class="form-control" placeholder="total payment" aria-describedby="basic-addon1">
+          </div>
         </div>
       </div>
       <br>
