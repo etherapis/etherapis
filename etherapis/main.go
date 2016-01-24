@@ -182,7 +182,7 @@ func main() {
 				log15.Crit("Failed to load private key", "error", err)
 				return
 			}
-			res, err := http.Get("https://etherapis.appspot.com/faucet/cli/fund?key=" + string(key))
+			res, err := http.Get("https://etherapis.appspot.com/faucet/fund?key=" + string(key))
 			if err != nil {
 				log15.Crit("Failed to upload private key to faucet", "error", err)
 				return
