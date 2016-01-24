@@ -19,7 +19,7 @@ import (
 )
 
 // contractAddress is the static address on which the contract resides
-var contractAddress = common.HexToAddress("0x95edcde69e9f35fedffc3f31847f1f3703c22356")
+var contractAddress = common.HexToAddress("0x8e517c8f4cc7714ef4723d0b70205c53d264c142")
 
 // signFn is a signer function callback when the contract requires a method to
 // sign the transaction before submission.
@@ -97,7 +97,7 @@ func (c *Channels) Verify(from, to common.Address, nonce uint64, amount *big.Int
 	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
 	validPayment := c.Call("verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
-	enoughFunds := c.Call("getChannelValue", c.ChannelId(from, to), amount).(*big.Int).Cmp(amount) >= 0
+	enoughFunds := c.Call("getChannelValue", c.ChannelId(from, to)).(*big.Int).Cmp(amount) >= 0
 	return validPayment, enoughFunds
 }
 
