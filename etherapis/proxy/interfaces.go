@@ -19,8 +19,10 @@ type Verifier interface {
 	// whether there are enough funds in the payment channel to process this payment.
 	Verify(from, to common.Address, nonce uint64, amount *big.Int, signature []byte) (bool, bool)
 
-	// Price returns the price from the verifier.
+	// Price returns the price provided by the signature of (from || to).
 	Price(from, to common.Address) *big.Int
+	// Nonce returns the nonce provided by the signature of (from || to).
+	Nonce(from, to common.Address) *big.Int
 }
 
 // Charger chaaaaarges! :D Fun's aside, this interfaces provides the capability

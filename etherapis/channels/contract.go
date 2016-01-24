@@ -105,6 +105,10 @@ func (c *Channels) Price(from, to common.Address) *big.Int {
 	return c.Call("getChannelPrice", c.ChannelId(from, to)).(*big.Int)
 }
 
+func (c *Channels) Nonce(from, to common.Address) *big.Int {
+	return c.Call("getChannelNonce", c.ChannelId(from, to)).(*big.Int)
+}
+
 // Claim redeems a given signature using the canonical channel. It creates an
 // Ethereum transaction and submits it to the Ethereum network.
 //
