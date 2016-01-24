@@ -314,18 +314,21 @@ func main() {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
+			return
 		}
 
 		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if contract.Validate(from, to, 0, amount, sig) {
+		if contract.ValidateSig(from, to, 0, amount, sig) {
 			log15.Info("payment was valid and was verified by the EVM")
 		} else {
 			log15.Crit("payment was invalid")
+			return
 		}
 
 		log15.Info("verifying invalid payment", "nonce", 1)
-		if contract.Validate(from, to, 1, amount, sig) {
+		if valid, _ := contract.Verify(from, to, 1, amount, sig); valid {
 			log15.Crit("payment was valid")
+			return
 		} else {
 			log15.Info("payment was invalid")
 		}
@@ -333,8 +336,20 @@ func main() {
 
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {
+		// Subscription requested, make sure all the details are provided
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil || len(accounts) < *subAccFlag {
+			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "requested", *subAccFlag, "error", err)
+			return
+		}
+		account := accounts[*subAccFlag]
+		if err := eth.AccountManager().Unlock(account.Address, ""); err != nil {
+			log15.Crit("Failed to unlock provider account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
+			return
+		}
+
 		// Create the payment vault to hold the various authorizations
-		vault := proxy.NewVault(new(testCharger))
+		vault := proxy.NewVault(NewCharger(account, eth.TxPool(), contract, eth.AccountManager()))
 		vault.AutoCharge(*chargeFlag)
 
 		for i, config := range strings.Split(*proxyFlag, ",") {
@@ -365,7 +380,7 @@ func main() {
 				return
 			}
 			// Create and start the new proxy
-			gateway := proxy.New(i, extPort, intPort, kind, new(testVerifier), vault)
+			gateway := proxy.New(i, extPort, intPort, kind, contract, vault)
 			go func() {
 				if err := gateway.Start(); err != nil {
 					log15.Crit("Failed to start proxy", "error", err)

@@ -17,7 +17,10 @@ type Verifier interface {
 
 	// Verify checks whether the authorization is cryptographically valid, and also
 	// whether there are enough funds in the payment channel to process this payment.
-	Verify(from, to common.Address, amount *big.Int, signature []byte) (bool, bool)
+	Verify(from, to common.Address, nonce uint64, amount *big.Int, signature []byte) (bool, bool)
+
+	// Price returns the price from the verifier.
+	Price(from, to common.Address) *big.Int
 }
 
 // Charger chaaaaarges! :D Fun's aside, this interfaces provides the capability
