@@ -13,27 +13,26 @@ contract Channels {
 
 	event NewChannel(address indexed from, address indexed to, bytes32 channel, uint nonce);
 	event Deposit(address indexed from, bytes32 indexed channel);
-	event Claim(address indexed who, bytes32 indexed channel);
+	event Redeem(bytes32 indexed channel, uint nonce);
 	event Reclaim(bytes32 indexed channel);
 
-	function makeChannelName(address from, address to) {
+	function makeChannelName(address from, address to) constant returns(bytes32) {
 		return sha3(from, to);
 	}
 
 	function createChannel(address to) {
-		bytes32 channel = sha3(from, to);
+		bytes32 channel = makeChannelName(msg.sender, to)
 		PaymentChannel ch = channels[channel];
 		if(!ch.valid) {
-			ch = PaymentChannel(msg.sender, to, 0, msg.value, block.timestamp + 1 days, true);
-			channels[channel] = ch
+			channels[channel] = PaymentChannel(msg.sender, to, 0, msg.value, block.timestamp + 1 days, true);
 		}
 
 		NewChannel(msg.sender, to, channel, ch.nonce);
 	}
 
 	// creates a hash using the recipient and value.
-	function getHash(bytes32 channel, address sender, address recipient, uint nonce, uint value) constant returns(bytes32) {
-		return sha3(channel, sender, recipient, nonce, value);
+	function getHash(address from, address to, uint nonce, uint value) constant returns(bytes32) {
+		return sha3(from, to, /*TODO: next version nonce,*/ value);
 	}
 
 	// verify a message (receipient || value) with the provided signature
@@ -41,15 +40,17 @@ contract Channels {
 		PaymentChannel ch = channels[channel];
 		return  ch.valid &&
 		        ch.validUntil > block.timestamp &&
-		        ch.from == ecrecover(getHash(channel, ch.from, ch.to, nonce, value), v, r, s);
+		        ch.from == ecrecover(getHash(ch.from, ch.to, nonce, value), v, r, s);
 	}
 
 	// claim funds
 	function claim(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) {
+		if( !verify(channel, nonce, value, v, r, s) ) return;
+		
 		PaymentChannel ch = channels[channel];
-
-		if( !verify(channel, ch.from, ch.to, nonce, value, v, r, s) ) return;
-		if( ch.nonce != nonce ) return;
+		
+		// TODO: next version
+		//if( ch.nonce != nonce ) return;
 		
 		if( value > ch.value ) {
 			ch.to.send(ch.value);
@@ -59,10 +60,10 @@ contract Channels {
 			ch.value -= value;
 		}
 
-		// channel is no longer valid
-		channels[channel].valid = false;
+		Redeem(channel, ch.nonce);
 
-		Claim(ch.to, channel);
+		// TODO: next version
+		//channels[channel].nonce++;
 	}
 
 	function deposit(bytes32 channel) {
@@ -99,3 +100,4 @@ contract Channels {
 		return ch.valid && ch.validUntil >= block.timestamp;
 	}
 }
+
