@@ -23,7 +23,6 @@ import (
 	"math"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/crypto"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/logger"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/logger/glog"
 )
@@ -185,7 +184,6 @@ func (abi *ABI) UnmarshalJSON(data []byte) error {
 			}
 		case "event":
 			abi.Events[field.Name] = Event{
-				Id:     common.BytesToHash(crypto.Sha3([]byte(field.Name))),
 				Name:   field.Name,
 				Inputs: field.Inputs,
 			}

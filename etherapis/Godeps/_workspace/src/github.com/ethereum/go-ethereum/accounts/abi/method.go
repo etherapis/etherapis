@@ -27,9 +27,18 @@ import (
 // Event is an event potentially triggered by the EVM's LOG mechanism. The Event
 // holds type information (inputs) about the yielded output
 type Event struct {
-	Id     common.Hash
 	Name   string
 	Inputs []Argument
+}
+
+func (e Event) Id() common.Hash {
+	types := make([]string, len(e.Inputs))
+	i := 0
+	for _, input := range e.Inputs {
+		types[i] = input.Type.String()
+		i++
+	}
+	return common.BytesToHash(crypto.Sha3([]byte(fmt.Sprintf("%v(%v)", e.Name, strings.Join(types, ",")))))
 }
 
 // Callable method given a `Name` and whether the method is a constant.
