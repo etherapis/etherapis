@@ -30,7 +30,13 @@ var (
 	syncFlag     = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
 
 	// Management commands
-	importFlag = flag.String("import", "", "Path to the demo account to import")
+	importFlag   = flag.String("import", "", "Path to the demo account to import")
+	accountsFlag = flag.Bool("accounts", false, "Lists the available accounts for micro payments")
+	queryFlag    = flag.String("query", "", "Address of the provider to check for a subscription")
+
+	subAccFlag  = flag.Int("subacc", 0, "Own account index with which to subscribe (list with --accounts)")
+	subToFlag   = flag.String("subto", "", "Address of the provider to subscribe to")
+	subFundFlag = flag.Float64("subfund", 1, "Initial ether value to fund the subscription with")
 
 	// Proxy flags
 	proxyFlag  = flag.String("proxy", "", "Payment proxy configs ext-port:int-port:type (e.g. 80:8080:call,81:8081:data)")
@@ -89,11 +95,11 @@ func main() {
 		log15.Crit("Failed to fetch eth service", "error", err)
 		return
 	}
-	channels, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain())
+	contract, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain())
 	if err != nil {
 		log15.Crit("Failed to get contract", "error", err)
+		return
 	}
-
 	// Depending on the flags, execute different things
 	switch {
 	case *importFlag != "":
@@ -106,6 +112,20 @@ func main() {
 		}
 		state, _ := eth.BlockChain().State()
 		log15.Info("Account successfully imported", "account", fmt.Sprintf("0x%x", account.Address), "balance", state.GetBalance(account.Address))
+		return
+
+	case *accountsFlag:
+		// Account listing requested, print all accounts and balances
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil || len(accounts) == 0 {
+			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "error", err)
+			return
+		}
+		state, _ := eth.BlockChain().State()
+		for i, account := range accounts {
+			balance := float64(new(big.Int).Div(state.GetBalance(account.Address), common.Finney).Int64()) / 1000
+			fmt.Printf("Account #%d: %f ether (http://testnet.etherscan.io/address/0x%x)\n", i, balance, account.Address)
+		}
 		return
 
 	case *accGenFlag > 0:
@@ -197,6 +217,68 @@ func main() {
 		log15.Info("Sleeping to ensure transaction propagation")
 		time.Sleep(10 * time.Second)
 		return
+
+	case len(*queryFlag) > 0:
+		// Check whether any of our accounts are subscribed to this particular service
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil || len(accounts) == 0 {
+			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "error", err)
+			return
+		}
+		provider := common.HexToAddress(*queryFlag)
+		log15.Info("Checking subscription status", "service", fmt.Sprintf("0x%x", provider))
+		for i, account := range accounts {
+			// Check if a subscription exists
+			if !contract.Exists(account.Address, provider) {
+				fmt.Printf("Account #%d: [0x%x]: not subscribed.\n", i, account.Address)
+				continue
+			}
+			// Retrieve the current balance on the subscription
+			ethers := contract.Call("getChannelValue", common.BytesToHash(contract.ChannelId(account.Address, provider))).(*big.Int)
+			funds := float64(new(big.Int).Div(ethers, common.Finney).Int64()) / 1000
+
+			fmt.Printf("Account #%d: [0x%x]: subscribed, with %v ether(s) left.\n", i, account.Address, funds)
+		}
+		return
+
+	case len(*subToFlag) > 0:
+		// Subscription requested, make sure all the details are provided
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil || len(accounts) < *subAccFlag {
+			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "requested", *subAccFlag, "error", err)
+			return
+		}
+		account := accounts[*subAccFlag]
+
+		// Check if a subscription exists
+		provider := common.HexToAddress(*subToFlag)
+		if contract.Exists(account.Address, provider) {
+			log15.Error("Account already subscribed", "index", *subAccFlag, "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider))
+			return
+		}
+		// Try to subscribe and wait until it completes
+		keystore := client.Keystore()
+		key, err := keystore.GetKey(account.Address, "gophergala")
+		if err != nil {
+			log15.Crit("Failed to unlock account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
+			return
+		}
+		amount := new(big.Int).Mul(big.NewInt(int64(1000000000**subFundFlag)), common.Shannon)
+
+		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider), "ethers", *subFundFlag)
+		pend := make(chan *channels.Channel)
+		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, common.Shannon, func(sub *channels.Channel) { panic("hi"); pend <- sub })
+		if err != nil {
+			log15.Crit("Failed to create subscription", "error", err)
+			return
+		}
+		if err := eth.TxPool().Add(tx); err != nil {
+			log15.Crit("Failed to execute subscription", "error", err)
+			return
+		}
+		log15.Info("Waiting for subscription to be finalized...", "tx", tx)
+		log15.Info("Successfully subscribed", "channel", fmt.Sprintf("%x", (<-pend).Id))
+		return
 	}
 
 	if *testFlag {
@@ -214,11 +296,11 @@ func main() {
 		eth.AccountManager().Unlock(from, "")
 
 		to := accounts[1].Address
-		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(channels.ChannelId(from, to)))
-		log15.Info("checking existence...", "exists", channels.Exists(from, to))
+		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(contract.ChannelId(from, to)))
+		log15.Info("checking existence...", "exists", contract.Exists(from, to))
 
 		amount := big.NewInt(10)
-		hash := channels.Call("getHash", from, to, 0, amount).([]byte)
+		hash := contract.Call("getHash", from, to, 0, amount).([]byte)
 		log15.Info("signing data", "to", to.Hex(), "amount", amount, "hash", common.ToHex(hash))
 
 		sig, err := eth.AccountManager().Sign(accounts[0], hash)
@@ -228,21 +310,21 @@ func main() {
 		}
 		log15.Info("verifying signature", "sig", common.ToHex(sig))
 
-		if channels.ValidateSig(from, to, 0, amount, sig) {
+		if contract.ValidateSig(from, to, 0, amount, sig) {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
 		}
 
 		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if channels.Validate(from, to, 0, amount, sig) {
+		if contract.Validate(from, to, 0, amount, sig) {
 			log15.Info("payment was valid and was verified by the EVM")
 		} else {
 			log15.Crit("payment was invalid")
 		}
 
 		log15.Info("verifying invalid payment", "nonce", 1)
-		if channels.Validate(from, to, 1, amount, sig) {
+		if contract.Validate(from, to, 1, amount, sig) {
 			log15.Crit("payment was valid")
 		} else {
 			log15.Info("payment was invalid")

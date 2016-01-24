@@ -22,7 +22,8 @@ import (
 
 // Geth is a wrapper around the Ethereum Go client.
 type Geth struct {
-	stack *node.Node // Ethereum network node / protocol stack
+	stack    *node.Node      // Ethereum network node / protocol stack
+	keystore crypto.KeyStore // Keystore to retrieve private keys from
 
 	ipcEndpoint string       // File system (or named pipe) path for the
 	ipcSocket   net.Listener // IPC listener socket waiting for inbound connections
@@ -84,7 +85,8 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 		return nil, fmt.Errorf("ethereum service: %v", err)
 	}
 	return &Geth{
-		stack: stack,
+		stack:    stack,
+		keystore: keystore,
 	}, nil
 }
 
@@ -132,6 +134,13 @@ func (g *Geth) Stop() error {
 // then it makes things simpler.
 func (g *Geth) Stack() *node.Node {
 	return g.stack
+}
+
+// Keystore is a quick hack to expose the internal Ethereum keystore. We should
+//  remove this after the API interface is implemented, but until then it makes
+// things simpler.
+func (g *Geth) Keystore() crypto.KeyStore {
+	return g.keystore
 }
 
 // Attach connects to the running node's IPC exposed APIs, and returns an Go API
