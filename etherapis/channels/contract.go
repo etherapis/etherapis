@@ -160,7 +160,7 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 		return nil, err
 	}
 
-	transaction, err := types.NewTransaction(statedb.GetNonce(from), to, amount, big.NewInt(250000), big.NewInt(50000000000), data).SignECDSA(key)
+	transaction, err := types.NewTransaction(statedb.GetNonce(from), contractAddress, amount, big.NewInt(250000), big.NewInt(50000000000), data).SignECDSA(key)
 	if err != nil {
 		return nil, err
 	}

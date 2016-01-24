@@ -77,6 +77,7 @@ func waitSync(freshness time.Duration, api *geth.API) {
 		// Seems we're not in sync, wait a bit and retry
 		if !notified {
 			log15.Info("You seem out of sync, updating...", "freshness", time.Since(mined), "allowed", freshness)
+			log15.Warn("We're sorry this isn't faster, test network's feisty :)")
 			notified = true
 		}
 		time.Sleep(250 * time.Millisecond)
