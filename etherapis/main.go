@@ -141,7 +141,7 @@ func main() {
 				return
 			}
 			bank = accounts[0]
-			if err := eth.AccountManager().Unlock(bank.Address, ""); err != nil {
+			if err := eth.AccountManager().Unlock(bank.Address, "gophergala"); err != nil {
 				log15.Crit("Failed to unlock funding account", "account", fmt.Sprintf("0x%x", bank.Address), "error", err)
 				return
 			}

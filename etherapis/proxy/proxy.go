@@ -67,6 +67,7 @@ func (p *Proxy) Start() error {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqLogger := p.logger.New("request-id", atomic.AddUint32(&p.autoid, 1))
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", VerificationHeader)
 
 	// Short circuit CORS pre-flight requests
 	if r.Method == "OPTIONS" {

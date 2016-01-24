@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>EtherAPIs: Decentralized, anonymous, trustless APIs</title>
+
+    <link href="https://bootswatch.com/slate/bootstrap.min.css" rel="stylesheet">
+
+    <script src="libs/bitcore-lib.min.js"></script>
+    <script src="libs/ethereumjs-accounts.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/js/bootstrap.min.js"></script>
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!-- Custom styles for this template -->
+    <link href="carousel.css" rel="stylesheet">
+
+    <script>
+      function freeLookup() {
+        var request = new XMLHttpRequest();
+        request.onreadystatechange = function() {
+          if (request.readyState == XMLHttpRequest.DONE ) {
+              var result = JSON.parse(request.response)
+
+              var dump = document.getElementById('dump');
+              dump.innerHTML = JSON.stringify(result, null, 2).split('\n').join("<br>")
+
+              var map = document.getElementById('map');
+              map.src = "https://www.google.com/maps/embed/v1/place?q=" + result.latitude + "," + result.longitude + "&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"
+          }
+        }
+        var host = document.getElementById('host');
+        request.open("GET", 'http://demo.etherapis.io:8080?ip='+host.value, true);
+        request.send();
+      }
+
+      function paidLookup() {
+        // Authorize the payment for this request
+        var bc  = require("bitcore-lib");
+        var ec  = bc.crypto.ECDSA;
+        var key = bc.PrivateKey("f89b3114e6e65ca687cd7673b9bf83d4e1309b5ec242d47760fc93305a112661");
+        var sig = ec.sign(bc.util.buffer.NULL_HASH, key);
+
+        ec().set({
+          hashbuf: bc.util.buffer.NULL_HASH,
+          pubkey:  key.toPublicKey(),
+          sig:     sig,
+        }).calci()
+
+        var sigHex = sig.r.toJSON() + sig.s.toJSON() + "0" + sig.i.toString(16);
+        console.log(ethUtil.publicToAddress(ethUtil.privateToPublic("f89b3114e6e65ca687cd7673b9bf83d4e1309b5ec242d47760fc93305a112661")).toString('hex'))
+
+        // Run the actual API request
+        var request = new XMLHttpRequest();
+        request.onreadystatechange = function() {
+          if (request.readyState == XMLHttpRequest.DONE ) {
+              var result = JSON.parse(request.response)
+              var header = JSON.parse(request.getResponseHeader("etherapi-verification"))
+              header.proof = "... redacted for visibility ..."
+
+              var dump = document.getElementById('dump');
+              dump.innerHTML = JSON.stringify(result, null, 2).split('\n').join("<br>")
+
+              var paydump = document.getElementById('paydump');
+              paydump.innerHTML = JSON.stringify(header, null, 2).split('\n').join("<br>")
+
+              var map = document.getElementById('map');
+              map.src = "https://www.google.com/maps/embed/v1/place?q=" + result.latitude + "," + result.longitude + "&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"
+          }
+        }
+        var host = document.getElementById('host');
+        request.open("GET", 'http://demo.etherapis.io:8000?ip='+host.value, true);
+        request.setRequestHeader("etherapi-authorization", '{"consumer": "0x01", "provider": "0x02", "signature": "' + sigHex + '", "amount": 1000}');
+        request.send();
+      }
+    </script>
+  </head>
+
+  <body>
+    <div class="navbar-wrapper">
+      <div class="container">
+        <nav class="navbar navbar-static-top">
+          <div class="container">
+            <div class="navbar-header">
+              <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+              </button>
+              <a class="navbar-brand" href="index.html">EtherAPIs</a>
+            </div>
+            <div id="navbar" class="navbar-collapse collapse">
+              <ul class="nav navbar-nav">
+                <li class="active"><a href="index.html">Home</a></li>
+                <li class="dropdown">
+                  <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Demos <span class="caret"></span></a>
+                  <ul class="dropdown-menu">
+                    <li><a href="geolocator.html">Geo-locator</a></li>
+                    <li><a href="streamer.html">Video streamer</a></li>
+                    <li><a href="console.html">Do-it-yourself</a></li>
+                  </ul>
+                </li>
+                <li><a href="https://github.com/gophergala2016/etherapis" target="_blank">How it works</a></li>
+                <li><a href="https://github.com/gophergala2016/etherapis" target="_blank">GitHub</a></li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+      </div>
+    </div>
+
+
+    <div class="container marketing" style="padding-top: 120px;">
+      <h2>Geo-locator demo</h2>
+      <hr>
+      <div class="row">
+        <div class="col-md-3"></div>
+        <div class="col-md-6">
+          <div class="input-group">
+            <span class="input-group-addon" id="basic-addon1">Address</span>
+            <input id="host" type="text" class="form-control" placeholder="e.g. gophergala.com" aria-describedby="basic-addon1">
+          </div>
+        </div>
+      </div>
+      <br>
+      <div class="row">
+        <div class="col-md-4"></div>
+        <div class="col-md-2">
+          <div class="btn-group" role="group" aria-label="...">
+            <button id="freeButton" type="button" class="btn btn-default" onclick="freeLookup();">Where's that? <small>(direct)</small></button>
+          </div>
+        </div>
+        <div class="col-md-2">
+          <div class="btn-group" role="group" aria-label="...">
+            <button id="paidButton" type="button" class="btn btn-default" onclick="paidLookup();">Where's that? <small>(paywalled)</small></button>
+          </div>
+        </div>
+      </div>
+      <br>
+      <div class="row">
+        <div class="col-md-3"></div>
+        <div class="col-md-6">
+          <iframe id="map" width="100%" height="360" src="https://www.google.com/maps/embed/v1/place?q=33.9269,-117.8612&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"></iframe>
+        </div>
+      </div>
+      <br>
+      <div class="row">
+        <div class="col-md-2"></div>
+        <div class="col-md-4">
+          <div class="panel panel-default">
+            <div class="panel-heading"><h3 class="panel-title">API response</h3></div>
+            <div class="panel-body" id="dump">No queries run yet...</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="panel panel-default">
+            <div class="panel-heading"><h3 class="panel-title">Paywall headers</h3></div>
+            <div class="panel-body" id="paydump">No queries run yet...</div>
+          </div>
+        </div>
+      </div>
+      <hr>
+      <footer>
+        <p class="pull-right"><a href="#">Back to top</a></p>
+        <p>&copy; 2016 EtherAPIs &middot; Gopher Gala hackathon &middot; 22-24 January</p>
+      </footer>
+    </div>
+  </body>
+</html>
