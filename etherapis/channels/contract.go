@@ -88,15 +88,21 @@ func (c *Channels) ValidateSig(from, to common.Address, nonce uint64, amount *bi
 	return c.abi.Call(c.exec, "verifySignature", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
 }
 
-func (c *Channels) Validate(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) bool {
+func (c *Channels) Verify(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
 	if len(sig) != 65 {
 		// invalid signature
-		return false
+		return false, false
 	}
 
 	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
-	return c.abi.Call(c.exec, "verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
+	validPayment := c.Call("verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
+	enoughFunds := c.Call("getChannelValue", c.ChannelId(from, to), amount).(*big.Int).Cmp(amount) >= 0
+	return validPayment, enoughFunds
+}
+
+func (c *Channels) Price(from, to common.Address) *big.Int {
+	return c.Call("getChannelPrice", c.ChannelId(from, to)).(*big.Int)
 }
 
 // Claim redeems a given signature using the canonical channel. It creates an

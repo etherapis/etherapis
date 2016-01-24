@@ -18,6 +18,7 @@ const (
 type authorization struct {
 	Consumer  string `json:"consumer"`  // API consumer authorizing the payment
 	Provider  string `json:"provider"`  // API provider to which to authorize the payment to
+	Nonce     uint64 `json:"nonce"`     // The nonce used for channel subscription
 	Amount    uint64 `json:"amount"`    // Amount of calls/data to authorize
 	Signature string `json:"signature"` // Secp256k1 elliptic curve signature
 }
