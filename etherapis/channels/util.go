@@ -1,4 +1,4 @@
-package main
+package channels
 
 import (
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
