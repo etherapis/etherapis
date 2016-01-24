@@ -33,6 +33,7 @@ const (
 	AddressTy
 	HashTy
 	RealTy
+	BytesTy
 )
 
 // Type is the reflection of the supported argument type
@@ -118,6 +119,7 @@ func NewType(t string) (typ Type, err error) {
 			typ.T = UintTy
 		case "bool":
 			typ.Kind = reflect.Bool
+			typ.T = BoolTy
 		case "real": // TODO
 			typ.Kind = reflect.Invalid
 		case "address":
@@ -140,6 +142,7 @@ func NewType(t string) (typ Type, err error) {
 			typ.Kind = reflect.Slice
 			typ.Type = byte_ts
 			typ.Size = vsize
+			typ.T = BytesTy
 		default:
 			return Type{}, fmt.Errorf("unsupported arg type: %s", t)
 		}

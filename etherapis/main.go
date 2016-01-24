@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +12,7 @@ import (
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
+	"github.com/gophergala2016/etherapis/etherapis/channels"
 	"github.com/gophergala2016/etherapis/etherapis/geth"
 	"github.com/gophergala2016/etherapis/etherapis/proxy"
 )
@@ -22,6 +23,7 @@ var (
 	syncFlag     = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
 	proxyFlag    = flag.String("proxy", "", "Payment proxy configs ext-port:int-port:type (e.g. 80:8080:call,81:8081:data)")
 	chargeFlag   = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
+	testFlag     = flag.Bool("test", false, "Runs using the default test vectors for signing and verifying signatures")
 )
 
 func main() {
@@ -62,21 +64,55 @@ func main() {
 	}
 	go monitorSync(api)
 
+	// Make sure we're at least semi recent on the chain before continuing
+	waitSync(*syncFlag, api)
+
 	var eth *eth.Ethereum
 	err = client.Stack().Service(&eth)
 	if err != nil {
 		log15.Crit("Failed to fetch eth service", "error", err)
 		return
 	}
-	contract, err := GetContract(eth.ChainDb(), eth.EventMux(), eth.BlockChain().State)
+	channels, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain())
 	if err != nil {
 		log15.Crit("Failed to get contract", "error", err)
 	}
-	fmt.Println("methods:", contract.abi.Methods)
-	fmt.Println("events:", contract.abi.Events)
 
-	// Make sure we're at least semi recent on the chain before continuing
-	waitSync(*syncFlag, api)
+	if *testFlag {
+		accounts, err := eth.AccountManager().Accounts()
+		if err != nil {
+			log15.Crit("Failed retrieving accounts", "err", err)
+		}
+		if len(accounts) < 2 {
+			log15.Crit("Test vectors requires at least 2 accounts", "len", len(accounts))
+			return
+		}
+
+		log15.Info("Attempting channel test vectors...")
+		from := accounts[0].Address
+		eth.AccountManager().Unlock(from, "")
+
+		to := accounts[1].Address
+		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(channels.ChannelId(from, to)))
+		log15.Info("checking existence...", "exists", channels.Exists(from, to))
+
+		amount := big.NewInt(100)
+		hash := channels.Call("getHash", from, to, 0, amount).([]byte)
+		log15.Info("signing data", "to", to.Hex(), "amount", amount, "hash", common.ToHex(hash))
+
+		sig, err := eth.AccountManager().Sign(accounts[0], hash)
+		if err != nil {
+			log15.Crit("signing vailed", "err", err)
+			return
+		}
+		log15.Info("verifying signature", "sig", common.ToHex(sig))
+
+		if channels.Validate(from, to, amount, sig) {
+			log15.Info("signature was valid and was verified by the EVM")
+		} else {
+			log15.Crit("signature was invalid")
+		}
+	}
 
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {

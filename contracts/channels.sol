@@ -16,12 +16,12 @@ contract Channels {
 	event Redeem(bytes32 indexed channel, uint nonce);
 	event Reclaim(bytes32 indexed channel);
 
-	function makeChannelName(address from, address to) returns(bytes32) {
+	function makeChannelName(address from, address to) constant returns(bytes32) {
 		return sha3(from, to);
 	}
 
 	function createChannel(address to) {
-		bytes32 channel = sha3(msg.sender, to);
+		bytes32 channel = makeChannelName(msg.sender, to)
 		PaymentChannel ch = channels[channel];
 		if(!ch.valid) {
 			channels[channel] = PaymentChannel(msg.sender, to, 0, msg.value, block.timestamp + 1 days, true);
@@ -31,8 +31,8 @@ contract Channels {
 	}
 
 	// creates a hash using the recipient and value.
-	function getHash(bytes32 channel, address sender, address recipient, uint nonce, uint value) constant returns(bytes32) {
-		return sha3(channel, sender, recipient, /*TODO: next version nonce,*/ value);
+	function getHash(address from, address to, uint nonce, uint value) constant returns(bytes32) {
+		return sha3(from, to, /*TODO: next version nonce,*/ value);
 	}
 
 	// verify a message (receipient || value) with the provided signature
@@ -40,7 +40,7 @@ contract Channels {
 		PaymentChannel ch = channels[channel];
 		return  ch.valid &&
 		        ch.validUntil > block.timestamp &&
-		        ch.from == ecrecover(getHash(channel, ch.from, ch.to, nonce, value), v, r, s);
+		        ch.from == ecrecover(getHash(ch.from, ch.to, nonce, value), v, r, s);
 	}
 
 	// claim funds

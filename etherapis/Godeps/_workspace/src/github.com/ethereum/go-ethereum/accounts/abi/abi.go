@@ -86,7 +86,7 @@ func (abi ABI) Pack(name string, args ...interface{}) ([]byte, error) {
 
 	// start with argument count match
 	if len(args) != len(method.Inputs) {
-		return nil, fmt.Errorf("argument count mismatch: %d for %d", len(args), len(method.Inputs))
+		return nil, fmt.Errorf("%s: argument count mismatch: %d for %d", name, len(args), len(method.Inputs))
 	}
 
 	arguments, err := abi.pack(name, args...)
@@ -115,6 +115,8 @@ func toGoType(t Argument, input []byte) interface{} {
 		return common.BytesToAddress(input)
 	case HashTy:
 		return common.BytesToHash(input)
+	case BytesTy:
+		return input
 	}
 	return nil
 }
@@ -129,6 +131,7 @@ func toGoType(t Argument, input []byte) interface{} {
 func (abi ABI) Call(executer Executer, name string, args ...interface{}) interface{} {
 	callData, err := abi.Pack(name, args...)
 	if err != nil {
+		fmt.Println(err)
 		glog.V(logger.Debug).Infoln("pack error:", err)
 		return nil
 	}
@@ -139,7 +142,12 @@ func (abi ABI) Call(executer Executer, name string, args ...interface{}) interfa
 	ret := make([]interface{}, int(math.Max(float64(len(method.Outputs)), float64(len(output)/32))))
 	for i := 0; i < len(ret); i += 32 {
 		index := i / 32
-		ret[index] = toGoType(method.Outputs[index], output[i:i+32])
+		var value []byte
+		if len(output) >= i+32 {
+			value = output[i : i+32]
+		}
+
+		ret[index] = toGoType(method.Outputs[index], value)
 	}
 
 	// return single interface
