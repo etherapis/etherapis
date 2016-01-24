@@ -46,6 +46,8 @@
       }
 
       function paidLookup() {
+        var provider = "16fe4442623e4d0a2631893162c2f618103bfabf"
+
         // Authorize the payment for this request
         var keyhex = document.getElementById('key').value;
         if (keyhex.length != 64) {
@@ -56,19 +58,22 @@
         if (authstr.length > 0) {
           authint = parseInt(authstr);
         }
-        var bc  = require("bitcore-lib");
-        var ec  = bc.crypto.ECDSA;
-        var key = bc.PrivateKey(keyhex);
-        var sig = ec.sign(bc.util.buffer.NULL_HASH, key);
+
+        var bc     = require("bitcore-lib");
+        var ec     = bc.crypto.ECDSA;
+        var key    = bc.PrivateKey(keyhex);
+        var sender = ethUtil.publicToAddress(ethUtil.privateToPublic(keyhex)).toString('hex')
+
+        var hash = ethUtil.sha3(sender + provider + ethUtil.pad(0, 32).toString('hex') + ethUtil.pad(authint, 32).toString('hex'));
+        var sig  = ec.sign(hash, key);
 
         ec().set({
-          hashbuf: bc.util.buffer.NULL_HASH,
+          hashbuf: hash,
           pubkey:  key.toPublicKey(),
           sig:     sig,
         }).calci()
 
         var sigHex = sig.r.toJSON() + sig.s.toJSON() + "0" + sig.i.toString(16);
-        var sender = ethUtil.publicToAddress(ethUtil.privateToPublic(keyhex)).toString('hex')
 
         // Run the actual API request
         var request = new XMLHttpRequest();
@@ -94,8 +99,7 @@
         }
         var host = document.getElementById('host');
         request.open("GET", 'http://demo.etherapis.io:8000?ip='+host.value, true);
-        console.log(authint)
-        request.setRequestHeader("etherapi-authorization", '{"consumer": "' + sender + '", "provider": "0x02", "signature": "' + sigHex + '", "amount": ' + authint + '}');
+        request.setRequestHeader("etherapi-authorization", '{"consumer": "' + sender + '", "provider": "' + provider + '", "signature": "' + sigHex + '", "amount": ' + authint + '}');
         request.send();
       }
     </script>
