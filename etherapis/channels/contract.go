@@ -113,7 +113,7 @@ func (c *Channels) Nonce(from, to common.Address) *big.Int {
 // Ethereum transaction and submits it to the Ethereum network.
 //
 // Chaim returns the unsigned transaction and an error if it failed.
-func (c *Channels) Claim(signer common.Address, from, to common.Address, amount *big.Int, sig []byte) (*types.Transaction, error) {
+func (c *Channels) Claim(signer common.Address, from, to common.Address, nonce uint64, amount *big.Int, sig []byte) (*types.Transaction, error) {
 	if len(sig) != 65 {
 		return nil, fmt.Errorf("Invalid signature. Signature requires to be 65 bytes")
 	}
@@ -121,7 +121,7 @@ func (c *Channels) Claim(signer common.Address, from, to common.Address, amount 
 	channelId := c.ChannelId(from, to)
 	signature := bytesToSignature(sig)
 
-	txData, err := c.abi.Pack("claim", channelId, 0, amount, signature.v, signature.r, signature.s)
+	txData, err := c.abi.Pack("claim", channelId, nonce, amount, signature.v, signature.r, signature.s)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (c *Channels) Claim(signer common.Address, from, to common.Address, amount 
 	statedb, _ := c.blockchain.State()
 	gasPrice := big.NewInt(50000000000)
 	gasLimit := big.NewInt(250000)
-	tx := types.NewTransaction(statedb.GetNonce(signer), contractAddress, gasPrice, gasLimit, new(big.Int), txData)
+	tx := types.NewTransaction(statedb.GetNonce(signer), contractAddress, new(big.Int), gasLimit, gasPrice, txData)
 	return tx, nil
 }
 

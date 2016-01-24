@@ -386,6 +386,7 @@ func main() {
 			log15.Crit("Failed to unlock provider account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
 			return
 		}
+		log15.Info("Setuping vault...", "owner", account.Address.Hex())
 
 		// Create the payment vault to hold the various authorizations
 		vault := proxy.NewVault(NewCharger(account, eth.TxPool(), contract, eth.AccountManager()))
@@ -470,13 +471,13 @@ func NewCharger(signer accounts.Account, txPool *core.TxPool, channels *channels
 	return &Charger{txPool: txPool, channels: channels, accountManager: am, signer: signer}
 }
 
-func (c *Charger) Charge(from, to common.Address, amount *big.Int, signature []byte) (common.Hash, error) {
-	tx, err := c.channels.Claim(c.signer.Address, from, to, amount, signature)
+func (c *Charger) Charge(from, to common.Address, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
+	tx, err := c.channels.Claim(c.signer.Address, from, to, nonce, amount, signature)
 	if err != nil {
 		return common.Hash{}, err
 	}
 
-	sig, err := c.accountManager.Sign(c.signer, tx.Hash().Bytes())
+	sig, err := c.accountManager.Sign(c.signer, tx.SigHash().Bytes())
 	if err != nil {
 		return common.Hash{}, err
 	}
