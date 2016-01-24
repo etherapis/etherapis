@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 	"github.com/gophergala2016/etherapis/etherapis/geth"
 	"github.com/gophergala2016/etherapis/etherapis/proxy"
@@ -91,7 +92,7 @@ func main() {
 				return
 			}
 			// Create and start the new proxy
-			gateway := proxy.New(i, extPort, intPort, kind)
+			gateway := proxy.New(i, extPort, intPort, kind, new(testVerifier))
 			go func() {
 				if err := gateway.Start(); err != nil {
 					log15.Crit("Failed to start proxy", "error", err)
@@ -110,4 +111,17 @@ func main() {
 		log15.Crit("Failed to terminate Ethereum client", "error", err)
 		return
 	}
+}
+
+type testVerifier struct{}
+
+func (v *testVerifier) Exists(from, to common.Address) bool { return from != to }
+func (v *testVerifier) Verify(from, to common.Address, amount uint64, signature []byte) (bool, bool) {
+	if len(signature) == 0 {
+		return false, false
+	}
+	if amount > 10000000 {
+		return true, false
+	}
+	return true, true
 }
