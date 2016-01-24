@@ -50,6 +50,7 @@ type Channels struct {
 func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain) (*Channels, error) {
 	contract := Channels{
 		blockchain: blockchain,
+		channels:   make(map[common.Hash]*Channel),
 		filters:    filters.NewFilterSystem(mux),
 	}
 	contract.callKey, _ = crypto.GenerateKey()
@@ -165,7 +166,7 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 		return nil, err
 	}
 
-	evId := c.abi.Events["NewChannel"].Id
+	evId := c.abi.Events["NewChannel"].Id()
 	filter := filters.New(c.db)
 	filter.SetAddresses([]common.Address{contractAddress})
 	filter.SetTopics([][]common.Hash{ // TODO refactor, helper

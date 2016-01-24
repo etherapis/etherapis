@@ -105,7 +105,7 @@ func main() {
 	case *importFlag != "":
 		// Account import, parse the provided .json file and ensure it's proper
 		manager := eth.AccountManager()
-		account, err := manager.Import(*importFlag, "gophergala")
+		account, err := manager.Import(*importFlag, "")
 		if err != nil {
 			log15.Crit("Failed to import specified account", "path", *importFlag, "error", err)
 			return
@@ -141,7 +141,7 @@ func main() {
 				return
 			}
 			bank = accounts[0]
-			if err := eth.AccountManager().Unlock(bank.Address, "gophergala"); err != nil {
+			if err := eth.AccountManager().Unlock(bank.Address, ""); err != nil {
 				log15.Crit("Failed to unlock funding account", "account", fmt.Sprintf("0x%x", bank.Address), "error", err)
 				return
 			}
@@ -258,7 +258,7 @@ func main() {
 		}
 		// Try to subscribe and wait until it completes
 		keystore := client.Keystore()
-		key, err := keystore.GetKey(account.Address, "gophergala")
+		key, err := keystore.GetKey(account.Address, "")
 		if err != nil {
 			log15.Crit("Failed to unlock account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
 			return
@@ -267,7 +267,7 @@ func main() {
 
 		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider), "ethers", *subFundFlag)
 		pend := make(chan *channels.Channel)
-		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, common.Shannon, func(sub *channels.Channel) { panic("hi"); pend <- sub })
+		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, common.Shannon, func(sub *channels.Channel) { pend <- sub })
 		if err != nil {
 			log15.Crit("Failed to create subscription", "error", err)
 			return
