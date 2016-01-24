@@ -4,12 +4,14 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"sync/atomic"
 
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -25,20 +27,24 @@ const (
 // the outside world. Its role is to broker API requests between them, while
 // at the same time enforcing payment authorizations.
 type Proxy struct {
-	extPort int          // External port number to accept requests on
-	intPort int          // Internal port to forward requests to
-	kind    ProxyType    // Proxy payment authorization type
-	logger  log15.Logger // ID-embedded contextual logger
-	autoid  uint32       // Auto ID to assign to the next request (log tracking)
+	extPort int       // External port number to accept requests on
+	intPort int       // Internal port to forward requests to
+	kind    ProxyType // Proxy payment authorization type
+
+	verifier Verifier // Payment verifier that looks into the Ethereum state to validate a transaction
+
+	logger log15.Logger // ID-embedded contextual logger
+	autoid uint32       // Auto ID to assign to the next request (log tracking)
 }
 
 // New creates a new payment proxy between an internal and external world.
-func New(id int, extPort, intPort int, kind ProxyType) *Proxy {
+func New(id int, extPort, intPort int, kind ProxyType, verifier Verifier) *Proxy {
 	return &Proxy{
-		extPort: extPort,
-		intPort: intPort,
-		kind:    kind,
-		logger:  log15.New("proxy-id", id),
+		extPort:  extPort,
+		intPort:  intPort,
+		kind:     kind,
+		verifier: verifier,
+		logger:   log15.New("proxy-id", id),
 	}
 }
 
@@ -81,37 +87,37 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.forward(w, res)
 		return
 	}
-	// Retrieve all the headers from the original request
-	headers := r.Header
-	var (
-		sub = headers.Get(SubscriptionHeader)
-		sum = headers.Get(AuthorizationHeader)
-		sig = headers.Get(SignatureHeader)
-	)
-	reqLogger.Debug("Received an API request", "subscription", sub, "authorized", sum, "signature", sig)
+	// Retrieve the authorization header from the original request
+	authHeader := r.Header.Get(AuthorizationHeader)
+	reqLogger.Debug("Received an API request", "authorization", authHeader)
 
 	// Ensure that all payment information are present
-	if sub == "" {
-		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+SubscriptionHeader)
-		http.Error(w, "Missing HTTP header: "+SubscriptionHeader, http.StatusBadRequest)
+	if authHeader == "" {
+		p.fail(w, &verification{Error: "Missing HTTP header: " + AuthorizationHeader})
 		return
 	}
-	if sum == "" {
-		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+AuthorizationHeader)
-		http.Error(w, "Missing HTTP header: "+AuthorizationHeader, http.StatusBadRequest)
-		return
-	}
-	if sig == "" {
-		w.Header().Set(UnauthorizedHeader, "Missing HTTP header: "+SignatureHeader)
-		http.Error(w, "Missing HTTP header: "+SignatureHeader, http.StatusBadRequest)
+	auth := new(authorization)
+	if err := json.Unmarshal([]byte(authHeader), auth); err != nil {
+		p.fail(w, &verification{Error: "Invalid authorization header: " + err.Error()})
 		return
 	}
 	// Process the request and payment based on the proxy type
 	switch p.kind {
 	case CallProxy:
 		// Make sure the consumer authorized the payment for this call
-		// TODO...
-
+		if !p.verifier.Exists(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider)) {
+			p.fail(w, &verification{Unknown: true, Error: "Non existent API subscription"})
+			return
+		}
+		valid, funded := p.verifier.Verify(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider), auth.Amount, common.Hex2Bytes(auth.Signature))
+		if !valid {
+			p.fail(w, &verification{Error: "Invalid authorization signature"})
+			return
+		}
+		if !funded {
+			p.fail(w, &verification{Error: "Not enough funds available"})
+			return
+		}
 		// Execute the API internally and proxy the response
 		reqLogger.Debug("Payment accepted for API invocation")
 		res, err := p.service(r)
@@ -140,6 +146,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.forward(w, res)
 		}
 	}
+}
+
+// fail sends out a authorization failure event to the client containing all the
+// necessary infos in both the header and the body to allow various parsings.
+func (p *Proxy) fail(w http.ResponseWriter, result *verification) {
+	failure := result.Marshal()
+
+	w.Header().Set(VerificationHeader, failure)
+	http.Error(w, failure, http.StatusBadRequest)
 }
 
 // service executes the API request in the internal API, and returns the reply,
