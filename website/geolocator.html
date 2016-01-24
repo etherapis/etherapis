@@ -53,6 +53,11 @@
         if (keyhex.length != 64) {
           keyhex = "1000000000000000000000000000000000000000000000000000000000000001"
         }
+        var noncestr = document.getElementById('nonce').value;
+        var nonceint = 0;
+        if (noncestr.length > 0) {
+          nonceint = parseInt(noncestr);
+        }
         var authstr = document.getElementById('auth').value;
         var authint = 0;
         if (authstr.length > 0) {
@@ -64,7 +69,7 @@
         var key    = bc.PrivateKey(keyhex);
         var sender = ethUtil.publicToAddress(ethUtil.privateToPublic(keyhex)).toString('hex')
 
-        var hash = ethUtil.sha3(sender + provider + ethUtil.pad(0, 32).toString('hex') + ethUtil.pad(authint, 32).toString('hex'));
+        var hash = ethUtil.sha3(sender + provider + ethUtil.pad(nonceint, 32).toString('hex') + ethUtil.pad(authint, 32).toString('hex'));
         var sig  = ec.sign(hash, key);
 
         ec().set({
@@ -94,7 +99,11 @@
               paydump.innerHTML = JSON.stringify(header, null, 2).split('\n').join("<br>")
 
               var map = document.getElementById('map');
-              map.src = "https://www.google.com/maps/embed/v1/place?q=" + result.latitude + "," + result.longitude + "&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"
+              if (result != undefined && 'latitude' in result) {
+                map.src = "https://www.google.com/maps/embed/v1/place?q=" + result.latitude + "," + result.longitude + "&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"
+              } else {
+                map.src = "";
+              }
           }
         }
         var host = document.getElementById('host');
@@ -170,22 +179,28 @@
       <div class="row">
         <div class="col-md-3"></div>
         <div class="col-md-6">
-          <iframe id="map" width="100%" height="360" src="https://www.google.com/maps/embed/v1/place?q=33.9269,-117.8612&zoom=9&key=AIzaSyBFkC7ahTxor7qvYvkdNHQ6u5wjPKFnhsw"></iframe>
+          <iframe id="map" width="100%" height="360" src=""></iframe>
         </div>
       </div>
       <br>
       <div class="row">
         <div class="col-md-3"></div>
-        <div class="col-md-3">
+        <div class="col-md-2">
           <div class="input-group">
             <span class="input-group-addon" id="basic-addon1">Key</span>
             <input id="key" type="text" class="form-control" placeholder="private key in hex" aria-describedby="basic-addon1">
           </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+          <div class="input-group">
+            <span class="input-group-addon" id="basic-addon1">Nonce</span>
+            <input id="nonce" type="text" class="form-control" value="0" aria-describedby="basic-addon1">
+          </div>
+        </div>
+        <div class="col-md-2">
           <div class="input-group">
             <span class="input-group-addon" id="basic-addon1">Amount</span>
-            <input id="auth" type="text" class="form-control" placeholder="total payment" aria-describedby="basic-addon1">
+            <input id="auth" type="text" class="form-control" value="1" aria-describedby="basic-addon1">
           </div>
         </div>
       </div>
