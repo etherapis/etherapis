@@ -21,9 +21,11 @@ func init() {
 // lookup is an HTTP handler that parses an IP address from the URL parameters,
 // queries freegeoip for the geographical data and returns it to the user.
 func lookup(w http.ResponseWriter, r *http.Request) {
-	address := r.URL.Query().Get("ip")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Query freegeoip for the address lookup
+	address := r.URL.Query().Get("ip")
+
 	res, err := http.Get("https://freegeoip.net/json/" + address)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to resolve IP address: %v", err), http.StatusInternalServerError)
