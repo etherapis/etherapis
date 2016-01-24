@@ -31,5 +31,5 @@ type Charger interface {
 	// Charge calls down into the underlying Ethereum contract layer and executes
 	// a payment charging transaction. It returns the hex encoded transaction id
 	// to enable later verification.
-	Charge(from, to common.Address, amount *big.Int, signature []byte) (common.Hash, error)
+	Charge(from, to common.Address, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error)
 }
