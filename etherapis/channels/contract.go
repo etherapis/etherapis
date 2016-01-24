@@ -19,7 +19,7 @@ import (
 )
 
 // contractAddress is the static address on which the contract resides
-var contractAddress = common.HexToAddress("0x0ebbdf55e052b633872e1ed3b8e368a82d8269de")
+var contractAddress = common.HexToAddress("0x95edcde69e9f35fedffc3f31847f1f3703c22356")
 
 // signFn is a signer function callback when the contract requires a method to
 // sign the transaction before submission.
@@ -76,7 +76,7 @@ func (c *Channels) Exists(from, to common.Address) bool {
 // where H=KECCAK(from, to, amount) and the validation must satisfy:
 // channel_owner == ECRECOVER(H, S) where S is the given signature signed by
 // the sender.
-func (c *Channels) Validate(from, to common.Address, amount *big.Int, sig []byte) bool {
+func (c *Channels) ValidateSig(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) bool {
 	if len(sig) != 65 {
 		// invalid signature
 		return false
@@ -84,7 +84,18 @@ func (c *Channels) Validate(from, to common.Address, amount *big.Int, sig []byte
 
 	channelId := common.BytesToHash(c.ChannelId(from, to))
 	signature := bytesToSignature(sig)
-	return c.abi.Call(c.exec, "verify", channelId, 0, amount, signature.v, signature.r, signature.s).(bool)
+	return c.abi.Call(c.exec, "verifySignature", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
+}
+
+func (c *Channels) Validate(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) bool {
+	if len(sig) != 65 {
+		// invalid signature
+		return false
+	}
+
+	channelId := common.BytesToHash(c.ChannelId(from, to))
+	signature := bytesToSignature(sig)
+	return c.abi.Call(c.exec, "verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
 }
 
 // Claim redeems a given signature using the canonical channel. It creates an
@@ -118,7 +129,7 @@ func (c *Channels) Call(methodName string, v ...interface{}) interface{} {
 
 // ChannelId returns the canonical channel name for transactor and beneficiary
 func (c *Channels) ChannelId(from, to common.Address) []byte {
-	return c.abi.Call(c.exec, "makeChannelName", from, to).([]byte)
+	return c.abi.Call(c.exec, "makeChannelId", from, to).([]byte)
 }
 
 // exec is the executer function callback for the abi `Call` method.
@@ -136,10 +147,10 @@ func (c *Channels) exec(input []byte) (out []byte) {
 }
 
 // Start Go API. Not important for this version
-func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount *big.Int, cb func(*Channel)) (*types.Transaction, error) {
+func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, price *big.Int, cb func(*Channel)) (*types.Transaction, error) {
 	from := crypto.PubkeyToAddress(key.PublicKey)
 
-	data, err := c.abi.Pack("createChannel", to)
+	data, err := c.abi.Pack("createChannel", to, price)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +171,6 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount *
 	filter.SetTopics([][]common.Hash{ // TODO refactor, helper
 		[]common.Hash{evId},
 		[]common.Hash{from.Hash()},
-		[]common.Hash{to.Hash()},
 	})
 	filter.SetBeginBlock(0)
 	filter.SetEndBlock(-1)
@@ -226,4 +236,4 @@ func (c *Channel) SignPayment(amount *big.Int) (Cheque, error) {
 	return Cheque{Sig: sig, From: c.from, To: c.to, Nonce: c.nonce, Amount: amount}, nil
 }
 
-const jsonAbi = `[{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"}],"name":"makeChannelName","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"isValidChannel","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"channels","outputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"price","type":"uint256"},{"name":"value","type":"uint256"},{"name":"validUntil","type":"uint256"},{"name":"valid","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValidUntil","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verify","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"price","type":"uint256"}],"name":"createChannel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"},{"indexed":false,"name":"price","type":"uint256"}],"name":"NewChannel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
+const jsonAbi = `[{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"isValidChannel","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelNonce","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"}],"name":"makeChannelId","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifyPayment","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"channels","outputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"nonce","type":"uint256"},{"name":"price","type":"uint256"},{"name":"value","type":"uint256"},{"name":"validUntil","type":"uint256"},{"name":"valid","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValidUntil","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"channel","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"price","type":"uint256"}],"name":"createChannel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelPrice","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"}],"name":"getChannelValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"channel","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifySignature","outputs":[{"name":"","type":"bool"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"},{"indexed":false,"name":"price","type":"uint256"}],"name":"NewChannel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"channel","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
