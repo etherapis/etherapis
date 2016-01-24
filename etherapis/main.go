@@ -214,7 +214,7 @@ func main() {
 		eth.AccountManager().Unlock(from, "")
 
 		to := accounts[1].Address
-		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", common.ToHex(channels.ChannelId(from, to)))
+		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", channels.ChannelId(from, to).Hex())
 		log15.Info("checking existence...", "exists", channels.Exists(from, to))
 
 		amount := big.NewInt(10)
