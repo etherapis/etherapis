@@ -80,6 +80,17 @@ body {
 /* Featurettes
 ------------------------- */
 
+h1#main-logo {
+  background-image: url(etherapis.png);
+  background-repeat: no-repeat;
+  background-size: contain;
+  display: block;
+  background-position: center;
+  text-indent: 100em;
+  overflow: hidden;
+  min-height: 300px;
+}
+
 .featurette-divider {
   margin: 80px 0; /* Space out the Bootstrap <hr> more */
 }
