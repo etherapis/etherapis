@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
+	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
 	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 	"github.com/gophergala2016/etherapis/etherapis/geth"
 	"github.com/gophergala2016/etherapis/etherapis/proxy"
@@ -59,6 +61,19 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 	}
 	go monitorSync(api)
+
+	var eth *eth.Ethereum
+	err = client.Stack().Service(&eth)
+	if err != nil {
+		log15.Crit("Failed to fetch eth service", "error", err)
+		return
+	}
+	contract, err := GetContract(eth.ChainDb(), eth.EventMux(), eth.BlockChain().State)
+	if err != nil {
+		log15.Crit("Failed to get contract", "error", err)
+	}
+	fmt.Println("methods:", contract.abi.Methods)
+	fmt.Println("events:", contract.abi.Events)
 
 	// Make sure we're at least semi recent on the chain before continuing
 	waitSync(*syncFlag, api)
