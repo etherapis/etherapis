@@ -153,6 +153,15 @@
       <h2>Geo-locator demo</h2>
       <hr>
       <div class="row">
+        <div class="col-md-12">
+          <p>This demo is meant as a high level showcase of the capabilities of the project. Sadly due to the time constraints we didn't manage to finish up the remainder of the demos, so instead we tried to make this one nice. Apologies if anything goes strangely wrong :)</p>
+          <p>First thing's first, what is EtherAPIs at all about? It is out hackathon attemp at building a globally decentralized, fully trustless yet perfectly secure API payment platform. Or a bit friendlier, we've built an API payment platform around the Ethereum smart contract blockchain which can be seamlessly placed in front of a running API server. For every inbound request, this bridging proxy will collect any payments made by the callers and if they satisfy the requirements, the API calls are passed through. The proxy will accumulate and charge payment authorizations at its sole dicression.</p>
+          <p>To demonstrate the idea, we've put together a trivially simple geo-lookup service: you can enter an IP address or domain name and it will look up its geographical position and display it on a map. We've provided two API endpoints for this service, one directly reachable while the other behind the payment proxy. Feel free to try searching for something using the below interface.</p>
+          <p>If you try to access the paid service, you'll quickly get access deined. You don't have a valid subscription. We'll fix that. You can fetch a pre-loaded and pre-subscribed demo account from our <em><a href="https://etherapis.appspot.com/faucet" target="_blank">account faucet</a></em>, which you can paste into the key field below. That should give you access... for one call. If you need more, you need to authorize further payments by signing off on the amount requested by the API in it's response header.</p>
+        </div>
+      </div>
+      <br>
+      <div class="row">
         <div class="col-md-3"></div>
         <div class="col-md-6">
           <div class="input-group">
@@ -218,6 +227,13 @@
             <div class="panel-heading"><h3 class="panel-title">Paywall headers</h3></div>
             <div class="panel-body" id="paydump">No queries run yet...</div>
           </div>
+        </div>
+      </div>
+      <br>
+      <div class="row">
+        <div class="col-md-12">
+          <p>Of course, if it's a decentralized platform, why would you trust a website showcasing it? You can go get the code that's at the heart of the entire project from our GitHub repository, which will give you access to very interesting features: you can import the key from the faucet server (--import=path) and can list all your live accounts (--accounts), each being tagged with a link to an online blockchain explorer to indeed verify your true balance. You can subscribe to anyone else's service (--subto=your-friend-acc --subacc=your-acc-index), and even proxy your own API through this decentralized payment system (--proxy).</p>
+          <p>Out of time.. :)</p>
         </div>
       </div>
       <hr>
