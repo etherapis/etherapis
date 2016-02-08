@@ -5,7 +5,7 @@ package proxy
 import (
 	"math/big"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // Verifier is an interface that accepts the details of a payment authorization

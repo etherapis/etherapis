@@ -6,7 +6,7 @@
     function contentLength(url, callback) {
       var request = new XMLHttpRequest();
       request.onreadystatechange = function() {
-        if (request.readyState == XMLHttpRequest.DONE ) {
+        if (request.readyState == 4) {
            callback(request.getResponseHeader("Content-Length"));
         }
       }
@@ -19,7 +19,7 @@
     function pullContent(url, start, end, callback) {
       var request = new XMLHttpRequest();
       request.onreadystatechange = function() {
-        if (request.readyState == XMLHttpRequest.DONE ) {
+        if (request.readyState == 4) {
            callback(request.response);
         }
       }
@@ -42,16 +42,33 @@
         var source = new MediaSource;
 
         source.addEventListener('sourceopen', function() {
-          // Media source ready, create a video buffer and start filling it
-          var buffer = source.addSourceBuffer('video/mp4; codecs="avc1.64001F, mp4a.40.2"');
+          // Media source ready, create a video buffer and an async queue to fill with data
+          var queue  = [];
 
+          var buffer = source.addSourceBuffer('video/webm; codecs="vorbis,vp8"');
+          buffer.addEventListener('updateend', function() {
+            if (queue.length > 0) {
+              buffer.appendBuffer(queue.shift());
+            }
+          }, false);
+
+          // Start reading the video stream, inserting either into the queue or the buffer
           var position = 0;
           var batch = 256000;
           var streamer;
 
           streamer = function() {
-            pullContent(url + "?from="+position, position, position+batch-1, function(data) {
-              buffer.appendBuffer(data);
+            var from = position;
+            var to   = position + batch - 1;
+
+            pullContent(url + "?from="+from+"&to="+to, from, to, function(data) {
+              // Queue up the next chunk or insert directly
+              if (queue.length > 0 || buffer.updating) {
+                queue.push(data);
+              } else {
+                buffer.appendBuffer(data);
+              }
+              // If there is further data to fetch, pull it
               position += batch;
               if (position < length) {
                 streamer();
@@ -68,17 +85,17 @@
 
 <body>
   <h1>Direct video streamer</h1>
-  <video width="640" height="360" controls>
-    <source src="http://demo.etherapis.io:8081/frag_bunny.mp4" type="video/mp4">Your browser does not support the video tag.
-  </video>
+  <!--<video width="640" height="360" controls>
+    <source src="http://localhost:8081/ed.ogv" type="video/ogg">Your browser does not support the video tag.
+  </video>-->
 
   <h1>Paywalled video streamer</h1>
   <video id="videosink" width="640" height="360" controls>
-    <source src="" type="video/mp4">Your browser does not support the video tag.
+    <source src="" type="video/webm">Your browser does not support the video tag.
   </video>
 
   <script>
-    streamVideo("http://demo.etherapis.io:8001/frag_bunny.mp4")
+    streamVideo("http://localhost:8081/ed.webm")
   </script>
 </body>
 </html>

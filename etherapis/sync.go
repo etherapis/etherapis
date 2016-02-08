@@ -5,8 +5,8 @@ package main
 import (
 	"time"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
-	"github.com/gophergala2016/etherapis/etherapis/geth"
+	"github.com/etherapis/etherapis/etherapis/geth"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // monitorSync runs in an inifite loop, periodically checking if the attached

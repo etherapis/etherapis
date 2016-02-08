@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
+	"github.com/ethereum/go-ethereum/common"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // ProxyType is the various types of proxies that can be created.

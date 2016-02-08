@@ -4,30 +4,23 @@ package geth
 import (
 	"fmt"
 	"math/big"
-	"net"
 	"path/filepath"
-	"runtime"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/accounts"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core/state"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/crypto"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/node"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/rpc"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Geth is a wrapper around the Ethereum Go client.
 type Geth struct {
 	stack    *node.Node      // Ethereum network node / protocol stack
 	keystore crypto.KeyStore // Keystore to retrieve private keys from
-
-	ipcEndpoint string       // File system (or named pipe) path for the
-	ipcSocket   net.Listener // IPC listener socket waiting for inbound connections
-	ipcServer   *rpc.Server  // RPC server handling the IPC API requests
 }
 
 // New creates a Ethereum client, pre-configured to one of the supported networks.
@@ -49,6 +42,7 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 	// Configure the node's service container
 	stackConf := &node.Config{
 		DataDir:        datadir,
+		IpcPath:        "geth.ipc",
 		Name:           common.MakeName(NodeName, NodeVersion),
 		BootstrapNodes: bootnodes,
 		ListenAddr:     fmt.Sprintf(":%d", NodePort),
@@ -91,41 +85,14 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 }
 
 // Start boots up the Ethereum protocol, starts interacting with the P2P network
-// and opens up the IPC based JSOn RPC API for accessing the exposed APIs.
+// and opens up the IPC based JSON RPC API for accessing the exposed APIs.
 func (g *Geth) Start() error {
-	// Assemble and start the protocol stack
-	err := g.stack.Start()
-	if err != nil {
-		return err
-	}
-	// Attach an IPC endpoint to the stack (this should really have been done by the stack..)
-	if runtime.GOOS == "windows" {
-		g.ipcEndpoint = common.DefaultIpcPath()
-	} else {
-		g.ipcEndpoint = filepath.Join(g.stack.DataDir(), "geth.ipc")
-	}
-	if g.ipcSocket, err = rpc.CreateIPCListener(g.ipcEndpoint); err != nil {
-		return err
-	}
-	// Iterate over all the APIs provided by the stack and expose them
-	g.ipcServer = rpc.NewServer()
-	for _, api := range g.stack.APIs() {
-		log15.Debug("Exposing/extending API...", "namespace", api.Namespace, "runner", fmt.Sprintf("%T", api.Service))
-		g.ipcServer.RegisterName(api.Namespace, api.Service)
-	}
-	log15.Info("Starting IPC listener...", "endpoint", g.ipcEndpoint)
-	go g.handleIPC()
-
-	return nil
+	return g.stack.Start()
 }
 
-// Stop closes down the Ethereum client, along with any other resouces it might
+// Stop closes down the Ethereum client, along with any other resources it might
 // be keeping around.
 func (g *Geth) Stop() error {
-	// Silently ignore errors for this hackathon :P
-	g.ipcSocket.Close()
-	g.ipcServer.Stop()
-
 	return g.stack.Stop()
 }
 
@@ -146,22 +113,9 @@ func (g *Geth) Keystore() crypto.KeyStore {
 // Attach connects to the running node's IPC exposed APIs, and returns an Go API
 // interface.
 func (g *Geth) Attach() (*API, error) {
-	client, err := rpc.NewIPCClient(g.ipcEndpoint)
+	client, err := rpc.NewIPCClient(g.stack.IpcEndpoint())
 	if err != nil {
 		return nil, err
 	}
 	return &API{client: client}, nil
-}
-
-// handleIPC is the RPC over IPC handler to accept inbound API requests and run
-// them until termination is requested.
-func (g *Geth) handleIPC() {
-	for {
-		conn, err := g.ipcSocket.Accept()
-		if err != nil {
-			log15.Debug("Unable to accept connection (shutting down?)", "error", err)
-			return
-		}
-		go g.ipcServer.ServeCodec(rpc.NewJSONCodec(conn))
-	}
 }

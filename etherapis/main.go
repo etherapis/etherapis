@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/accounts"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/core/types"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/eth"
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
-	"github.com/gophergala2016/etherapis/etherapis/channels"
-	"github.com/gophergala2016/etherapis/etherapis/geth"
-	"github.com/gophergala2016/etherapis/etherapis/proxy"
+	"github.com/etherapis/etherapis/etherapis/channels"
+	"github.com/etherapis/etherapis/etherapis/geth"
+	"github.com/etherapis/etherapis/etherapis/proxy"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 var (

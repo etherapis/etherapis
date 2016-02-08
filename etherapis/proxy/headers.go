@@ -5,7 +5,7 @@ package proxy
 import (
 	"encoding/json"
 
-	"github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 const (

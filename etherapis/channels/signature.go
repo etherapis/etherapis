@@ -1,6 +1,6 @@
 package channels
 
-import "github.com/gophergala2016/etherapis/etherapis/Godeps/_workspace/src/github.com/ethereum/go-ethereum/common"
+import "github.com/ethereum/go-ethereum/common"
 
 type signature struct {
 	v    uint64
