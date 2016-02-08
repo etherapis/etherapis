@@ -13,20 +13,24 @@ RUN \
 # Configure the Go runtime
 ENV GOPATH=/go
 ENV PATH=$GOPATH/bin:$PATH
+ENV GO15VENDOREXPERIMENT=1
 
 # Build all the demo services and clean up build environment
 RUN \
-  apk add --update go git                               && \
+  apk add --update go git gcc musl-dev                  && \
   go get github.com/etherapis/etherapis/demos/geolookup && \
   go get github.com/etherapis/etherapis/demos/streamer  && \
-  apk del go git                                        && \
+  go get github.com/etherapis/etherapis/etherapis       && \
+  apk del go git gcc musl-dev                           && \
   rm -rf /var/cache/apk/* $GOPATH/src $GOPATH/pkg
 
 # Initialize any demo services having external dependencies
 RUN \
-  mkdir -p /demos/geolookup/ /demos/streamer/ && \
+  mkdir -p /demos/geolookup /demos/streamer /etherapis && \
   streamer --init --root /demos/streamer/data
 
+EXPOSE 80
+EXPOSE 81
 EXPOSE 8080
 EXPOSE 8081
 
