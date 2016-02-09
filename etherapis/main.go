@@ -111,7 +111,7 @@ func main() {
 		log15.Crit("Failed to fetch eth service", "error", err)
 		return
 	}
-	contract, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain())
+	contract, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain(), eth.Miner().PendingState)
 	if err != nil {
 		log15.Crit("Failed to get contract", "error", err)
 		return

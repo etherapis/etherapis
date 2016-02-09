@@ -1,120 +1,175 @@
-contract Channels {
-	struct PaymentChannel {
+contract ServiceProviders {
+	struct Terms {
+		uint price;
+		uint cancellationTime;
+	}
+
+	struct Service {
+		uint id;
+		address owner;
+		string name;
+		string endpoint;
+
+		Terms terms;
+
+		bool exist;
+	}
+	Service[] services;
+
+	event NewService(string indexed name, address indexed owner, uint serviceId);
+
+	function addService(string name, string endpoint, uint price, uint cancellationTime) {
+		Service service = services[services.length++];
+		service.exist = true;
+		service.id = services.length-1;
+		service.owner = msg.sender;
+		service.name = name;
+		service.endpoint = endpoint;
+		service.terms.price = price;
+		service.terms.cancellationTime = cancellationTime;
+
+		services.push(service);
+
+		NewService(name, msg.sender, service.id);
+	}
+
+	function getService(uint serviceId) constant returns(string, string, uint, uint) {
+		Service service = services[serviceId];
+		return (service.name, service.endpoint, service.terms.price, service.terms.cancellationTime);
+	}
+
+	function serviceLength() constant returns(uint) {
+		return services.length;
+	}
+}
+
+contract Subscriptions {
+	struct Subscription {
 		address from;
-		address to;
+		ServiceProviders.Service service;
 		uint256 nonce;
 
-		uint256 price;
 		uint256 value;
-		uint validUntil;
 
-		bool valid;
+		bool cancelled;
+		uint closedAt;
+
+		bool exist;
 	}
-	mapping(bytes32 => PaymentChannel) public channels;
+	mapping(bytes32 => Subscription) subscriptions;
 
-	event NewChannel(address indexed from, address indexed to, bytes32 channel, uint nonce, uint256 price);
-	event Deposit(address indexed from, bytes32 indexed channel);
-	event Redeem(bytes32 indexed channel, uint nonce);
-	event Reclaim(bytes32 indexed channel);
+	event NewSubscription(address indexed from, uint indexed serviceId, bytes32 subscriptionId, uint nonce);
+	event Deposit(address indexed from, bytes32 indexed subscriptionId);
+	event Redeem(bytes32 indexed subscriptionId, uint nonce);
+	event Cancel(bytes32 indexed subscriptionId, uint closedAt);
+	event Reclaim(bytes32 indexed subscriptionId);
 
-	function makeChannelId(address from, address to) constant returns(bytes32) {
-		return sha3(from, to);
-	}
+	modifier isOwner(bytes32 subscriptionId) { if( subscriptions[subscriptionId].from != msg.sender) throw; }
 
-	function createChannel(address to, uint256 price) {
-		bytes32 channel = makeChannelId(msg.sender, to);
-		PaymentChannel ch = channels[channel];
-		if(!ch.valid) {
-			channels[channel] = PaymentChannel(msg.sender, to, 0, price, msg.value, block.timestamp + 7 days, true);
-		}
-
-		NewChannel(msg.sender, to, channel, ch.nonce, price);
+	function makeSubscriptionId(address from, uint serviceId) constant returns(bytes32) {
+		return sha3(from, serviceId);
 	}
 
 	// creates a hash using the recipient and value.
-	function getHash(address from, address to, uint nonce, uint value) constant returns(bytes32) {
-		return sha3(from, to, nonce,value);
+	function getHash(address from, uint serviceId, uint nonce, uint value) constant returns(bytes32) {
+		return sha3(from, serviceId, nonce,value);
 	}
 
 	// verify a message (receipient || value) with the provided signature
-	function verifySignature(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
-		PaymentChannel ch = channels[channel];
-		return  ch.valid &&
-		        ch.validUntil > block.timestamp &&
-		        ch.from == ecrecover(getHash(ch.from, ch.to, nonce, value), v, r, s);
+	function verifySignature(bytes32 subscriptionId, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
+		Subscription ch = subscriptions[subscriptionId];
+		return ch.exist && ch.from == ecrecover(getHash(ch.from, ch.service.id, nonce, value), v, r, s);
 	}
 
-	function verifyPayment(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
-		if( !verifySignature(channel, nonce, value, v, r, s) ) return false;
+	function verifyPayment(bytes32 subscriptionId, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) constant returns(bool) {
+		if( !verifySignature(subscriptionId, nonce, value, v, r, s) ) return false;
 
-		PaymentChannel ch = channels[channel];
+		Subscription ch = subscriptions[subscriptionId];
+		if( ch.closedAt >= now ) return false;
 		if( ch.nonce != nonce ) return false;
 
 		return true;
 	}
 
 	// claim funds
-	function claim(bytes32 channel, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) {
-		if( !verifySignature(channel, nonce, value, v, r, s) ) return;
-		
-		PaymentChannel ch = channels[channel];
-		
+	function claim(bytes32 subscriptionId, uint nonce, uint value, uint8 v, bytes32 r, bytes32 s) {
+		if( !verifySignature(subscriptionId, nonce, value, v, r, s) ) return;
+
+		Subscription ch = subscriptions[subscriptionId];
+
 		if( ch.nonce != nonce ) return;
-		
+
 		if( value > ch.value ) {
-			ch.to.send(ch.value);
+			ch.service.owner.send(ch.value);
 			ch.value = 0;
 		} else {
-			ch.to.send(value);
+			ch.service.owner.send(value);
 			ch.value -= value;
 		}
 
-		Redeem(channel, ch.nonce);
+		Redeem(subscriptionId, ch.nonce);
 
-		channels[channel].nonce++;
+		subscriptions[subscriptionId].nonce++;
 	}
 
-	function deposit(bytes32 channel) {
-		if( !isValidChannel(channel) ) throw;
+	function deposit(bytes32 subscriptionId) {
+		if( !isValidSubscription(subscriptionId) ) throw;
 
-		PaymentChannel ch = channels[channel]; 
+		Subscription ch = subscriptions[subscriptionId]; 
 		ch.value += msg.value;
 
-		Deposit(msg.sender, channel);
+		Deposit(msg.sender, subscriptionId);
 	}
 
-	// reclaim a channel
-	function reclaim(bytes32 channel) {
-		PaymentChannel ch = channels[channel];
-		if( ch.value > 0 && ch.validUntil < block.timestamp ) {
+	function cancel(bytes32 subscriptionId) isOwner(subscriptionId) {
+		Subscription ch = subscriptions[subscriptionId];
+
+		uint closedAt = now + ch.service.terms.cancellationTime;
+
+		subscriptions[subscriptionId].cancelled = true;
+		subscriptions[subscriptionId].closedAt = closedAt;
+
+		Cancel(subscriptionId, closedAt);
+	}
+
+	// reclaim a subscriptionId
+	function reclaim(bytes32 subscriptionId) {
+		Subscription ch = subscriptions[subscriptionId];
+		if( ch.closedAt <= block.timestamp ) {
 			ch.from.send(ch.value);
-			delete channels[channel];
+			delete subscriptions[subscriptionId];
 		}
 	}
 
-	function getChannelValue(bytes32 channel) constant returns(uint256) {
-		return channels[channel].value;
+	function getSubscriptionIdValue(bytes32 subscriptionId) constant returns(uint256) {
+		return subscriptions[subscriptionId].value;
 	}
 
-	function getChannelNonce(bytes32 channel) constant returns(uint256) {
-		return channels[channel].nonce;
+	function getSubscriptionIdNonce(bytes32 subscriptionId) constant returns(uint256) {
+		return subscriptions[subscriptionId].nonce;
 	}
 
-	function getChannelPrice(bytes32 channel) constant returns(uint256) {
-		return channels[channel].price;
+	function getSubscriptionIdOwner(bytes32 subscriptionId) constant returns(address) {
+		return subscriptions[subscriptionId].from;
 	}
 
-	function getChannelOwner(bytes32 channel) constant returns(address) {
-		return channels[channel].from;
+	function getSubscriptionIdClosedAt(bytes32 subscriptionId) constant returns(uint) {
+		return subscriptions[subscriptionId].closedAt;
 	}
-
-	function  getChannelValidUntil(bytes32 channel) constant returns(uint) {
-		return channels[channel].validUntil;
-	}
-	function isValidChannel(bytes32 channel) constant returns(bool) {
-		PaymentChannel ch = channels[channel];
-		return ch.valid && ch.validUntil >= block.timestamp;
+	function isValidSubscription(bytes32 subscriptionId) constant returns(bool) {
+		Subscription ch = subscriptions[subscriptionId];
+		return ch.exist && ch.closedAt < block.timestamp;
 	}
 }
 
+contract EtherApis is Subscriptions, ServiceProviders {
+	function subscribe(uint serviceId) {
+		bytes32 subscriptionId = makeSubscriptionId(msg.sender, serviceId);
+		Subscription ch = subscriptions[subscriptionId];
 
+		Service service = services[serviceId];
+		subscriptions[subscriptionId] = Subscription(msg.sender, service, 0, msg.value, false, 0, true);
+
+		NewSubscription(msg.sender, serviceId, subscriptionId, ch.nonce);
+	}
+}
