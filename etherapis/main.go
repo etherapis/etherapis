@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/etherapis/etherapis/etherapis/channels"
+	"github.com/etherapis/etherapis/etherapis/dashboard"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/etherapis/etherapis/etherapis/proxy"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -26,9 +27,10 @@ import (
 
 var (
 	// General flags
-	datadirFlag  = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
-	loglevelFlag = flag.Int("loglevel", 3, "Log level to use for displaying system events")
-	syncFlag     = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
+	datadirFlag   = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
+	loglevelFlag  = flag.Int("loglevel", 3, "Log level to use for displaying system events")
+	syncFlag      = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
+	dashboardFlag = flag.Int("dashboard", 0, "Port number on which to run the dashboard (0 = disabled)")
 
 	// Management commands
 	importFlag   = flag.String("import", "", "Path to the demo account to import")
@@ -79,6 +81,16 @@ func main() {
 	if err != nil {
 		log15.Crit("Failed to attach to node", "error", err)
 		return
+	}
+	// Create the etherapis dashboard and run it
+	if *dashboardFlag != 0 {
+		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
+		go func() {
+			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), dashboard.New(api)); err != nil {
+				log15.Crit("Failed to start dashboard", "error", err)
+				os.Exit(-1)
+			}
+		}()
 	}
 	// Wait for network connectivity and monitor synchronization
 	log15.Info("Searching for network peers...")

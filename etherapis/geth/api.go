@@ -48,7 +48,7 @@ type response struct {
 //
 // This is currently painfully non-concurrent, but it will have to do until we
 // find the time for niceties like this :P
-func (api *API) request(method string, params []interface{}) (json.RawMessage, error) {
+func (api *API) Request(method string, params []interface{}) (json.RawMessage, error) {
 	api.lock.Lock()
 	defer api.lock.Unlock()
 
@@ -78,7 +78,7 @@ func (api *API) request(method string, params []interface{}) (json.RawMessage, e
 
 // BlockNumber retrieves the current head number of the blockchain.
 func (api *API) BlockNumber() (uint64, error) {
-	res, err := api.request("eth_blockNumber", nil)
+	res, err := api.Request("eth_blockNumber", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -91,7 +91,7 @@ func (api *API) BlockNumber() (uint64, error) {
 
 // GetBlockTime retrieves the block of the given number from the canonical chain.
 func (api *API) GetBlockTime(num uint64) (time.Time, error) {
-	res, err := api.request("eth_getBlockByNumber", []interface{}{rpc.NewHexNumber(num), true})
+	res, err := api.Request("eth_getBlockByNumber", []interface{}{rpc.NewHexNumber(num), true})
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -117,7 +117,7 @@ type SyncStatus struct {
 // currently synchronizing with the network.
 func (api *API) Syncing() (*SyncStatus, error) {
 	// Execute the request and check if syncing is not running
-	res, err := api.request("eth_syncing", nil)
+	res, err := api.Request("eth_syncing", nil)
 	if err != nil {
 		return nil, err
 	}
