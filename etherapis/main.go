@@ -27,10 +27,11 @@ import (
 
 var (
 	// General flags
-	datadirFlag   = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
-	loglevelFlag  = flag.Int("loglevel", 3, "Log level to use for displaying system events")
-	syncFlag      = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
-	dashboardFlag = flag.Int("dashboard", 0, "Port number on which to run the dashboard (0 = disabled)")
+	datadirFlag         = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
+	loglevelFlag        = flag.Int("loglevel", 3, "Log level to use for displaying system events")
+	syncFlag            = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
+	dashboardFlag       = flag.Int("dashboard", 0, "Port number on which to run the dashboard (0 = disabled)")
+	dashboardAssetsFlag = flag.String("dashboard-assets", "", "Path to the dashboard static assets to use (empty = built in assets)")
 
 	// Management commands
 	importFlag   = flag.String("import", "", "Path to the demo account to import")
@@ -86,7 +87,8 @@ func main() {
 	if *dashboardFlag != 0 {
 		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
 		go func() {
-			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), dashboard.New(api)); err != nil {
+			http.Handle("/", dashboard.New(api, *dashboardAssetsFlag))
+			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
 				log15.Crit("Failed to start dashboard", "error", err)
 				os.Exit(-1)
 			}
@@ -440,6 +442,13 @@ func main() {
 				}
 			}()
 		}
+		// Wait indefinitely, for now at least
+		for {
+			time.Sleep(time.Second)
+		}
+	}
+	// If the dashboard was opened, wait indefinitely
+	if *dashboardFlag > 0 {
 		// Wait indefinitely, for now at least
 		for {
 			time.Sleep(time.Second)
