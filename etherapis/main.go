@@ -158,7 +158,6 @@ func main() {
 
 	// Depending on the flags, execute different things
 	switch {
-
 	case *importFlag != "":
 		// Account import, parse the provided .json file and ensure it's proper
 		manager := eth.AccountManager()
@@ -170,7 +169,6 @@ func main() {
 		state, _ := eth.BlockChain().State()
 		log15.Info("Account successfully imported", "account", fmt.Sprintf("0x%x", account.Address), "balance", state.GetBalance(account.Address))
 		return
-
 	case *accountsFlag:
 		// Account listing requested, print all accounts and balances
 		accounts, err := eth.AccountManager().Accounts()

@@ -140,7 +140,7 @@ contract Subscriptions {
 		}
 	}
 
-	function getSubscription(bytes32 subscriptionId) constant returns(address, uint, uint, uint, bool, uint) {
+	function getSubscription(bytes32 subscriptionId) constant returns(address from, uint serviceId, uint nonce, uint value, bool cancelled, uint closedAt) {
 		Subscription ch = subscriptions[subscription]
 
 		return (ch.from, ch.services.id, ch.nonce, ch.value, ch.cancelled, ch.closedAt);
