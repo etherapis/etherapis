@@ -33,7 +33,7 @@ contract ServiceProviders {
 		NewService(name, msg.sender, service.id);
 	}
 
-	function getService(uint serviceId) constant returns(string, string, uint, uint) {
+	function getService(uint serviceId) constant returns(string name, string endpoint, uint price, uint cancellationTime) {
 		Service service = services[serviceId];
 		return (service.name, service.endpoint, service.terms.price, service.terms.cancellationTime);
 	}
@@ -48,7 +48,6 @@ contract Subscriptions {
 		address from;
 		ServiceProviders.Service service;
 		uint256 nonce;
-
 		uint256 value;
 
 		bool cancelled;
@@ -141,21 +140,32 @@ contract Subscriptions {
 		}
 	}
 
-	function getSubscriptionIdValue(bytes32 subscriptionId) constant returns(uint256) {
+	function getSubscription(bytes32 subscriptionId) constant returns(address, uint, uint, uint, bool, uint) {
+		Subscription ch = subscriptions[subscription]
+
+		return (ch.from, ch.services.id, ch.nonce, ch.value, ch.cancelled, ch.closedAt);
+	}
+
+	function getSubscriptionValue(bytes32 subscriptionId) constant returns(uint256) {
 		return subscriptions[subscriptionId].value;
 	}
 
-	function getSubscriptionIdNonce(bytes32 subscriptionId) constant returns(uint256) {
+	function getSubscriptionNonce(bytes32 subscriptionId) constant returns(uint256) {
 		return subscriptions[subscriptionId].nonce;
 	}
 
-	function getSubscriptionIdOwner(bytes32 subscriptionId) constant returns(address) {
+	function getSubscriptionOwner(bytes32 subscriptionId) constant returns(address) {
 		return subscriptions[subscriptionId].from;
 	}
 
-	function getSubscriptionIdClosedAt(bytes32 subscriptionId) constant returns(uint) {
+	function getSubscriptionServiceId(bytes32 subscriptionId) constant returns(uint) {
+		return subscriptions[subscriptionId].service.id;
+	}
+
+	function getSubscriptionClosedAt(bytes32 subscriptionId) constant returns(uint) {
 		return subscriptions[subscriptionId].closedAt;
 	}
+
 	function isValidSubscription(bytes32 subscriptionId) constant returns(bool) {
 		Subscription ch = subscriptions[subscriptionId];
 		return ch.exist && ch.closedAt < block.timestamp;

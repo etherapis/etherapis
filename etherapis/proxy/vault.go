@@ -16,15 +16,15 @@ import (
 // by various clients. It can at any point return the most recent payment + proof,
 // and can also charge the payments via the Ethereum network.
 type Vault struct {
-	vaults  map[common.Address]*accountVault // Individual vaults per provider account
-	charger Charger                          // Paymen charger to redeem pending payments
-	lock    sync.RWMutex                     // Lock protecting the vaults
+	vaults  map[string]*accountVault // Individual vaults per provider account
+	charger Charger                  // Paymen charger to redeem pending payments
+	lock    sync.RWMutex             // Lock protecting the vaults
 }
 
 // NewVault create and returns an empty vault ready for accepting payments.
 func NewVault(charger Charger) *Vault {
 	return &Vault{
-		vaults:  make(map[common.Address]*accountVault),
+		vaults:  make(map[string]*accountVault),
 		charger: charger,
 	}
 }
@@ -34,23 +34,22 @@ func (v *Vault) Store(auth *authorization) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	provider := common.HexToAddress(auth.Provider)
-	if _, ok := v.vaults[provider]; !ok {
-		v.vaults[provider] = &accountVault{
+	if _, ok := v.vaults[auth.ServiceId]; !ok {
+		v.vaults[auth.ServiceId] = &accountVault{
 			auths: make(map[common.Address]*authorization),
 			pends: make(map[common.Address]*authorization),
 		}
 	}
-	v.vaults[provider].Store(auth)
+	v.vaults[auth.ServiceId].Store(auth)
 }
 
 // Fetch retrieves the last known authorization made by a particular consumer to
 // a particular provider.
-func (v *Vault) Fetch(provider, consumer common.Address) *authorization {
+func (v *Vault) Fetch(serviceId *big.Int, consumer common.Address) *authorization {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if account, ok := v.vaults[provider]; ok {
+	if account, ok := v.vaults[serviceId.String()]; ok {
 		return account.Fetch(consumer)
 	}
 	return nil
@@ -111,7 +110,7 @@ func (v *accountVault) Fetch(consumer common.Address) *authorization {
 func (v *accountVault) Charge(charger Charger) {
 	v.lock.RLock()
 	for _, auth := range v.pends {
-		tx, err := charger.Charge(common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider), auth.Nonce, new(big.Int).SetUint64(auth.Amount), common.FromHex(auth.Signature))
+		tx, err := charger.Charge(common.HexToAddress(auth.Consumer), common.String2Big(auth.ServiceId), auth.Nonce, new(big.Int).SetUint64(auth.Amount), common.FromHex(auth.Signature))
 		if err != nil {
 			log15.Error("Failed to charge payment", "authorization", auth, "error", err)
 		} else {

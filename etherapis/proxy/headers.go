@@ -17,7 +17,7 @@ const (
 // header, based on which the server may check for fund availability
 type authorization struct {
 	Consumer  string `json:"consumer"`  // API consumer authorizing the payment
-	Provider  string `json:"provider"`  // API provider to which to authorize the payment to
+	ServiceId string `json:"serviceId"` // API service id to which to authorize the payment to
 	Nonce     uint64 `json:"nonce"`     // The nonce used for channel subscription
 	Amount    uint64 `json:"amount"`    // Amount of calls/data to authorize
 	Signature string `json:"signature"` // Secp256k1 elliptic curve signature

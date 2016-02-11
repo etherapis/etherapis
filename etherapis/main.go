@@ -36,10 +36,10 @@ var (
 	// Management commands
 	importFlag   = flag.String("import", "", "Path to the demo account to import")
 	accountsFlag = flag.Bool("accounts", false, "Lists the available accounts for micro payments")
-	queryFlag    = flag.String("query", "", "Address of the provider to check for a subscription")
+	serviceFlag  = flag.String("service", "", "Id of the service to check for a subscription")
 
 	subAccFlag  = flag.Int("subacc", 0, "Own account index with which to subscribe (list with --accounts)")
-	subToFlag   = flag.String("subto", "", "Address of the provider to subscribe to")
+	subToFlag   = flag.String("subto", "", "Id of the service to subscribe to")
 	subFundFlag = flag.Float64("subfund", 1, "Initial ether value to fund the subscription with")
 
 	// Proxy flags
@@ -116,13 +116,12 @@ func main() {
 		log15.Crit("Failed to get contract", "error", err)
 		return
 	}
-	// Depending on the flags, execute different things
-	switch {
-	case *signFlag != "":
+
+	if *signFlag != "" {
 		var message struct {
-			Provider string
-			Nonce    uint64
-			Amount   uint64
+			ServiceId int64
+			Nonce     uint64
+			Amount    uint64
 		}
 		if err := json.Unmarshal([]byte(*signFlag), &message); err != nil {
 			log15.Crit("Failed to decode data", "error", err)
@@ -140,9 +139,10 @@ func main() {
 		account := accounts[0]
 
 		from := account.Address
-		to := common.HexToAddress(message.Provider)
+		serviceId := big.NewInt(message.ServiceId)
 
-		hash := contract.Call("getHash", from, to, message.Nonce, message.Amount).([]byte)
+		var hash []byte
+		contract.Call(&hash, "getHash", from, serviceId, message.Nonce, message.Amount)
 		log15.Info("getting hash", "hash", common.ToHex(hash))
 
 		eth.AccountManager().Unlock(from, "")
@@ -154,6 +154,21 @@ func main() {
 		log15.Info("generated signature", "sig", common.ToHex(sig))
 
 		return
+	}
+
+	// Wait for network connectivity and monitor synchronization
+	log15.Info("Searching for network peers...")
+	server := client.Stack().Server()
+	for len(server.Peers()) == 0 {
+		time.Sleep(100 * time.Millisecond)
+	}
+	go monitorSync(api)
+
+	// Make sure we're at least semi recent on the chain before continuing
+	waitSync(*syncFlag, api)
+
+	// Depending on the flags, execute different things
+	switch {
 
 	case *importFlag != "":
 		// Account import, parse the provided .json file and ensure it's proper
@@ -271,23 +286,24 @@ func main() {
 		time.Sleep(10 * time.Second)
 		return
 
-	case len(*queryFlag) > 0:
+	case len(*serviceFlag) > 0:
 		// Check whether any of our accounts are subscribed to this particular service
 		accounts, err := eth.AccountManager().Accounts()
 		if err != nil || len(accounts) == 0 {
 			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "error", err)
 			return
 		}
-		provider := common.HexToAddress(*queryFlag)
-		log15.Info("Checking subscription status", "service", fmt.Sprintf("0x%x", provider))
+		serviceId := common.String2Big(*serviceFlag)
+		log15.Info("Checking subscription status", "service", fmt.Sprintf("%s", serviceId))
 		for i, account := range accounts {
 			// Check if a subscription exists
-			if !contract.Exists(account.Address, provider) {
+			if !contract.Exists(account.Address, serviceId) {
 				fmt.Printf("Account #%d: [0x%x]: not subscribed.\n", i, account.Address)
 				continue
 			}
 			// Retrieve the current balance on the subscription
-			ethers := contract.Call("getChannelValue", contract.ChannelId(account.Address, provider)).(*big.Int)
+			var ethers *big.Int
+			contract.Call(&ethers, "getSubscriptionValue", contract.SubscriptionId(account.Address, serviceId))
 			funds := float64(new(big.Int).Div(ethers, common.Finney).Int64()) / 1000
 
 			fmt.Printf("Account #%d: [0x%x]: subscribed, with %v ether(s) left.\n", i, account.Address, funds)
@@ -304,9 +320,9 @@ func main() {
 		account := accounts[*subAccFlag]
 
 		// Check if a subscription exists
-		provider := common.HexToAddress(*subToFlag)
-		if contract.Exists(account.Address, provider) {
-			log15.Error("Account already subscribed", "index", *subAccFlag, "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider))
+		serviceId := common.String2Big(*subToFlag)
+		if contract.Exists(account.Address, serviceId) {
+			log15.Error("Account already subscribed", "index", *subAccFlag, "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId)
 			return
 		}
 		// Try to subscribe and wait until it completes
@@ -318,9 +334,9 @@ func main() {
 		}
 		amount := new(big.Int).Mul(big.NewInt(int64(1000000000**subFundFlag)), common.Shannon)
 
-		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", fmt.Sprintf("0x%x", provider), "ethers", *subFundFlag)
-		pend := make(chan *channels.Channel)
-		tx, err := contract.NewChannel(key.PrivateKey, provider, amount, big.NewInt(1), func(sub *channels.Channel) { pend <- sub })
+		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId, "ethers", *subFundFlag)
+		pend := make(chan *channels.Subscription)
+		tx, err := contract.Subscribe(key.PrivateKey, serviceId, amount, big.NewInt(1), func(sub *channels.Subscription) { pend <- sub })
 		if err != nil {
 			log15.Crit("Failed to create subscription", "error", err)
 			return
@@ -348,13 +364,20 @@ func main() {
 		from := accounts[0].Address
 		eth.AccountManager().Unlock(from, "")
 
-		to := accounts[0].Address
-		log15.Info("making channel name...", "from", from.Hex(), "to", to.Hex(), "ID", contract.ChannelId(from, to).Hex())
-		log15.Info("checking existence...", "exists", contract.Exists(from, to))
+		serviceId := big.NewInt(0)
+		log15.Info("making channel name...", "from", from.Hex(), "service-id", serviceId, "id", contract.SubscriptionId(from, serviceId).Hex())
+
+		if !contract.Exists(from, serviceId) {
+			log15.Crit("No subscription found")
+			return
+		}
+		log15.Info("checking existence...", "exists", "OK")
 
 		amount := big.NewInt(1)
-		hash := contract.Call("getHash", from, to, 0, amount).([]byte)
-		log15.Info("signing data", "to", to.Hex(), "amount", amount, "hash", common.ToHex(hash))
+
+		var hash []byte
+		contract.Call(&hash, "getHash", from, serviceId, 1, amount)
+		log15.Info("signing data", "service-id", serviceId, "amount", amount, "hash", common.ToHex(hash))
 
 		sig, err := eth.AccountManager().Sign(accounts[0], hash)
 		if err != nil {
@@ -363,7 +386,7 @@ func main() {
 		}
 		log15.Info("verifying signature", "sig", common.ToHex(sig))
 
-		if contract.ValidateSig(from, to, 0, amount, sig) {
+		if contract.ValidateSig(from, serviceId, 1, amount, sig) {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
@@ -371,15 +394,15 @@ func main() {
 		}
 
 		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if valid, _ := contract.Verify(from, to, 0, amount, sig); valid {
+		if valid, _ := contract.Verify(from, serviceId, 1, amount, sig); valid {
 			log15.Info("payment was valid and was verified by the EVM")
 		} else {
 			log15.Crit("payment was invalid")
 			return
 		}
 
-		log15.Info("verifying invalid payment", "nonce", 1)
-		if valid, _ := contract.Verify(from, to, 1, amount, sig); valid {
+		log15.Info("verifying invalid payment", "nonce", 2)
+		if valid, _ := contract.Verify(from, serviceId, 2, amount, sig); valid {
 			log15.Crit("payment was valid")
 			return
 		} else {
@@ -477,23 +500,23 @@ func (v *testVerifier) Verify(from, to common.Address, amount *big.Int, signatur
 
 type testCharger struct{}
 
-func (c *testCharger) Charge(from, to common.Address, amount *big.Int, signature []byte) (common.Hash, error) {
+func (c *testCharger) Charge(from common.Address, serviceId *big.Int, amount *big.Int, signature []byte) (common.Hash, error) {
 	return common.HexToHash("0x7426125287fe1dfa9acc6d79008f0dc9a7e0c292b3387040e37c2a71518d711a"), nil
 }
 
 type Charger struct {
 	txPool         *core.TxPool
-	channels       *channels.Channels
+	channels       *channels.Subscriptions
 	accountManager *accounts.Manager
 	signer         accounts.Account
 }
 
-func NewCharger(signer accounts.Account, txPool *core.TxPool, channels *channels.Channels, am *accounts.Manager) *Charger {
+func NewCharger(signer accounts.Account, txPool *core.TxPool, channels *channels.Subscriptions, am *accounts.Manager) *Charger {
 	return &Charger{txPool: txPool, channels: channels, accountManager: am, signer: signer}
 }
 
-func (c *Charger) Charge(from, to common.Address, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
-	tx, err := c.channels.Claim(c.signer.Address, from, to, nonce, amount, signature)
+func (c *Charger) Charge(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
+	tx, err := c.channels.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
 	if err != nil {
 		return common.Hash{}, err
 	}

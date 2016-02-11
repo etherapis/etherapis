@@ -109,20 +109,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch p.kind {
 	case CallProxy:
 		// Make sure the consumer authorized the payment for this call
-		consumer, provider := common.HexToAddress(auth.Consumer), common.HexToAddress(auth.Provider)
+		consumer, serviceId := common.HexToAddress(auth.Consumer), common.String2Big(auth.ServiceId)
 
-		if !p.verifier.Exists(consumer, provider) {
+		if !p.verifier.Exists(consumer, serviceId) {
 			p.fail(w, &verification{Unknown: true, Error: "Non existent API subscription"})
 			return
 		}
 
-		nonce := p.verifier.Nonce(consumer, provider).Uint64()
+		nonce := p.verifier.Nonce(consumer, serviceId).Uint64()
 		if auth.Nonce != nonce {
 			p.fail(w, &verification{Error: "Invalid nonce", Nonce: nonce})
 			return
 		}
 
-		valid, funded := p.verifier.Verify(consumer, provider, auth.Nonce, new(big.Int).SetUint64(auth.Amount), common.FromHex(auth.Signature))
+		valid, funded := p.verifier.Verify(consumer, serviceId, auth.Nonce, new(big.Int).SetUint64(auth.Amount), common.FromHex(auth.Signature))
 		if !valid {
 			p.fail(w, &verification{Error: "Invalid authorization signature"})
 			return
@@ -132,8 +132,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		price := p.verifier.Price(consumer, provider).Uint64()
-		if prev := p.vault.Fetch(provider, consumer); prev != nil && prev.Amount+price > auth.Amount {
+		price := p.verifier.Price(consumer, serviceId).Uint64()
+		if prev := p.vault.Fetch(serviceId, consumer); prev != nil && prev.Amount+price > auth.Amount {
 			p.fail(w, &verification{
 				Error:      "Not enough funds authorized",
 				Authorized: prev.Amount,

@@ -22,18 +22,18 @@ import (
 )
 
 // contractAddress is the static address on which the contract resides
-var contractAddress = common.HexToAddress("0x187be5cddd95d1e3c4ce06b659c7c4ce8c696574")
+var contractAddress = common.HexToAddress("0xdf10842fffd8f11ee7adc058960e261a62989c68")
 
 // signFn is a signer function callback when the contract requires a method to
 // sign the transaction before submission.
 type signFn func(*types.Transaction) (*types.Transaction, error)
 
-// Channels is the channels contract reflecting that on the ethereum network. The
+// Subscriptions is the channels contract reflecting that on the ethereum network. The
 // channels contract handles all validation and verifications of payments and
 // allows you to redeem cheques.
 //
-// Channels implements the proxy.Verifier and proxy.Charges interfaces.
-type Channels struct {
+// Subscriptions implements the proxy.Verifier and proxy.Charges interfaces.
+type Subscriptions struct {
 	abi        abi.ABI
 	blockchain *core.BlockChain
 
@@ -41,7 +41,7 @@ type Channels struct {
 	mux     *event.TypeMux
 	db      ethdb.Database
 
-	channels  map[common.Hash]*Channel
+	channels  map[common.Hash]*Subscription
 	channelMu sync.RWMutex
 
 	// call key is a temporary key used to do calls
@@ -52,10 +52,10 @@ type Channels struct {
 
 // Fetch initialises a new abi and returns the contract. It does not
 // deploy the contract, hence the name.
-func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, callState func() *state.StateDB) (*Channels, error) {
-	contract := Channels{
+func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, callState func() *state.StateDB) (*Subscriptions, error) {
+	contract := Subscriptions{
 		blockchain: blockchain,
-		channels:   make(map[common.Hash]*Channel),
+		channels:   make(map[common.Hash]*Subscription),
 		filters:    filters.NewFilterSystem(mux),
 		callState:  callState,
 	}
@@ -70,61 +70,91 @@ func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, c
 	return &contract, nil
 }
 
-func (c *Channels) Stop() {
+func (c *Subscriptions) Stop() {
 	c.filters.Stop()
 }
 
 // Exists returns whether there exists a channel between transactor and beneficiary.
-func (c *Channels) Exists(from, to common.Address) bool {
-	return c.Call("isValidChannel", c.ChannelId(from, to)).(bool)
+func (c *Subscriptions) Exists(from common.Address, serviceId *big.Int) (exists bool) {
+	if err := c.Call(&exists, "isValidSubscription", c.SubscriptionId(from, serviceId)); err != nil {
+		log15.Warn("exists", "error", err)
+	}
+
+	return exists
 }
 
 // Validate validates the ECDSA (curve=secp256k1) signature with the given input
 // where H=KECCAK(from, to, amount) and the validation must satisfy:
 // channel_owner == ECRECOVER(H, S) where S is the given signature signed by
 // the sender.
-func (c *Channels) ValidateSig(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) bool {
+func (c *Subscriptions) ValidateSig(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (validSig bool) {
 	if len(sig) != 65 {
 		// invalid signature
 		return false
 	}
 
-	channelId := c.ChannelId(from, to)
+	channelId := c.SubscriptionId(from, serviceId)
 	signature := bytesToSignature(sig)
-	return c.Call("verifySignature", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
+
+	if err := c.Call(&validSig, "verifySignature", channelId, nonce, amount, signature.v, signature.r, signature.s); err != nil {
+		log15.Warn("verifySignature", "error", err)
+	}
+
+	return validSig
 }
 
-func (c *Channels) Verify(from, to common.Address, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
+type Service struct {
+	Name, Endpoint          string
+	Price, CancellationTime *big.Int
+}
+
+func (c *Subscriptions) Verify(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
 	if len(sig) != 65 {
 		// invalid signature
 		return false, false
 	}
 
-	channelId := c.ChannelId(from, to)
+	channelId := c.SubscriptionId(from, serviceId)
 	signature := bytesToSignature(sig)
-	validPayment := c.Call("verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s).(bool)
-	enoughFunds := c.Call("getChannelValue", c.ChannelId(from, to)).(*big.Int).Cmp(amount) >= 0
-	return validPayment, enoughFunds
+
+	var validPayment bool
+	if err := c.Call(&validPayment, "verifyPayment", channelId, nonce, amount, signature.v, signature.r, signature.s); err != nil {
+		log15.Warn("verifyPayment", "error", err)
+	}
+
+	var service Service
+	if err := c.Call(&service, "getService", serviceId); err != nil {
+		log15.Warn("getService", "error", err)
+	}
+
+	return validPayment, service.Price.Cmp(amount) >= 0
 }
 
-func (c *Channels) Price(from, to common.Address) *big.Int {
-	return c.Call("getChannelPrice", c.ChannelId(from, to)).(*big.Int)
+func (c *Subscriptions) Price(from common.Address, serviceId *big.Int) *big.Int {
+	var service Service
+	if err := c.Call(&service, "getService", serviceId); err != nil {
+		log15.Warn("getService", "error", err)
+	}
+	return service.Price
 }
 
-func (c *Channels) Nonce(from, to common.Address) *big.Int {
-	return c.Call("getChannelNonce", c.ChannelId(from, to)).(*big.Int)
+func (c *Subscriptions) Nonce(from common.Address, serviceId *big.Int) (nonce *big.Int) {
+	if err := c.Call(&nonce, "getSubscriptionNonce", c.SubscriptionId(from, serviceId)); err != nil {
+		log15.Warn("getSubscriptionNoce", "error", err)
+	}
+	return nonce
 }
 
 // Claim redeems a given signature using the canonical channel. It creates an
 // Ethereum transaction and submits it to the Ethereum network.
 //
 // Chaim returns the unsigned transaction and an error if it failed.
-func (c *Channels) Claim(signer common.Address, from, to common.Address, nonce uint64, amount *big.Int, sig []byte) (*types.Transaction, error) {
+func (c *Subscriptions) Claim(signer common.Address, from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (*types.Transaction, error) {
 	if len(sig) != 65 {
 		return nil, fmt.Errorf("Invalid signature. Signature requires to be 65 bytes")
 	}
 
-	channelId := c.ChannelId(from, to)
+	channelId := c.SubscriptionId(from, serviceId)
 	signature := bytesToSignature(sig)
 
 	txData, err := c.abi.Pack("claim", channelId, nonce, amount, signature.v, signature.r, signature.s)
@@ -140,17 +170,21 @@ func (c *Channels) Claim(signer common.Address, from, to common.Address, nonce u
 }
 
 // helper forwarder
-func (c *Channels) Call(methodName string, v ...interface{}) interface{} {
-	return c.abi.Call(c.exec, methodName, v...)
+func (c *Subscriptions) Call(r interface{}, methodName string, v ...interface{}) error {
+	return c.abi.Call(c.exec, r, methodName, v...)
 }
 
-// ChannelId returns the canonical channel name for transactor and beneficiary
-func (c *Channels) ChannelId(from, to common.Address) common.Hash {
-	return common.BytesToHash(c.Call("makeChannelId", from, to).([]byte))
+// SubscriptionId returns the canonical channel name for transactor and beneficiary
+func (c *Subscriptions) SubscriptionId(from common.Address, serviceId *big.Int) common.Hash {
+	var id []byte
+	if err := c.Call(&id, "makeSubscriptionId", from, serviceId); err != nil {
+		log15.Warn("makeSubscriptionId", "error", err)
+	}
+	return common.BytesToHash(id)
 }
 
 // exec is the executer function callback for the abi `Call` method.
-func (c *Channels) exec(input []byte) []byte {
+func (c *Subscriptions) exec(input []byte) []byte {
 	ret, err := runtime.Call(contractAddress, input, &runtime.Config{
 		GetHashFn: core.GetHashFn(c.blockchain.CurrentBlock().ParentHash(), c.blockchain),
 		State:     c.callState(),
@@ -164,10 +198,10 @@ func (c *Channels) exec(input []byte) []byte {
 }
 
 // Start Go API. Not important for this version
-func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, price *big.Int, cb func(*Channel)) (*types.Transaction, error) {
+func (c *Subscriptions) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amount, price *big.Int, cb func(*Subscription)) (*types.Transaction, error) {
 	from := crypto.PubkeyToAddress(key.PublicKey)
 
-	data, err := c.abi.Pack("createChannel", to, price)
+	data, err := c.abi.Pack("subscribe", serviceId)
 	if err != nil {
 		return nil, err
 	}
@@ -177,18 +211,18 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 		return nil, err
 	}
 
-	transaction, err := types.NewTransaction(statedb.GetNonce(from), contractAddress, amount, big.NewInt(250000), big.NewInt(50000000000), data).SignECDSA(key)
+	transaction, err := types.NewTransaction(statedb.GetNonce(from), contractAddress, amount, big.NewInt(600000), big.NewInt(50000000000), data).SignECDSA(key)
 	if err != nil {
 		return nil, err
 	}
 
-	evId := c.abi.Events["NewChannel"].Id()
+	evId := c.abi.Events["NewSubscription"].Id()
 	filter := filters.New(c.db)
 	filter.SetAddresses([]common.Address{contractAddress})
 	filter.SetTopics([][]common.Hash{ // TODO refactor, helper
 		[]common.Hash{evId},
 		[]common.Hash{from.Hash()},
-		[]common.Hash{to.Hash()},
+		[]common.Hash{common.BigToHash(serviceId)},
 	})
 	filter.SetBeginBlock(0)
 	filter.SetEndBlock(-1)
@@ -206,7 +240,7 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 
 		channel, exist := c.channels[channelId]
 		if !exist {
-			channel = NewChannel(c, channelId, from, to, nonce)
+			channel = NewSubscription(c, channelId, from, serviceId, nonce)
 			c.channels[channelId] = channel
 		}
 		cb(channel)
@@ -217,38 +251,40 @@ func (c *Channels) NewChannel(key *ecdsa.PrivateKey, to common.Address, amount, 
 	return transaction, nil
 }
 
-type Channel struct {
-	Id       common.Hash
-	key      *ecdsa.PrivateKey
-	from, to common.Address
-	nonce    *big.Int
+type Subscription struct {
+	Id        common.Hash
+	key       *ecdsa.PrivateKey
+	from      common.Address
+	serviceId *big.Int
+	nonce     *big.Int
 
-	channels *Channels
+	channels *Subscriptions
 }
 
-// NewChannel returns a new payment channel.
-func NewChannel(c *Channels, id common.Hash, from, to common.Address, nonce *big.Int) *Channel {
-	return &Channel{
-		Id:       id,
-		from:     from,
-		to:       to,
-		channels: c,
+// NewSubscription returns a new payment channel.
+func NewSubscription(c *Subscriptions, id common.Hash, from common.Address, serviceId *big.Int, nonce *big.Int) *Subscription {
+	return &Subscription{
+		Id:        id,
+		from:      from,
+		serviceId: serviceId,
+		channels:  c,
 	}
 }
 
 type Cheque struct {
 	Sig           []byte
-	From, To      common.Address
+	From          common.Address
+	ServiceId     *big.Int
 	Nonce, Amount *big.Int
 }
 
 // SignPayment returns a signed transaction on the current payment channel.
-func (c *Channel) SignPayment(amount *big.Int) (Cheque, error) {
-	sig, err := crypto.Sign(sha3(c.Id[:], c.from[:], c.to[:], c.nonce.Bytes(), amount.Bytes()), c.key)
+func (c *Subscription) SignPayment(amount *big.Int) (Cheque, error) {
+	sig, err := crypto.Sign(sha3(c.Id[:], c.from[:], c.serviceId.Bytes(), c.nonce.Bytes(), amount.Bytes()), c.key)
 	if err != nil {
 		return Cheque{}, err
 	}
-	return Cheque{Sig: sig, From: c.from, To: c.to, Nonce: c.nonce, Amount: amount}, nil
+	return Cheque{Sig: sig, From: c.from, ServiceId: c.serviceId, Nonce: c.nonce, Amount: amount}, nil
 }
 
-const jsonAbi = `[{"constant":false,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"subscribe","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdNonce","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"name","type":"string"},{"name":"endpoint","type":"string"},{"name":"price","type":"uint256"},{"name":"cancellationTime","type":"uint256"}],"name":"addService","outputs":[],"type":"function"},{"constant":true,"inputs":[],"name":"serviceLength","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifyPayment","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdClosedAt","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"}],"name":"makeSubscriptionId","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"cancel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"isValidSubscription","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"getService","outputs":[{"name":"","type":"string"},{"name":"","type":"string"},{"name":"","type":"uint256"},{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifySignature","outputs":[{"name":"","type":"bool"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"name","type":"string"},{"indexed":true,"name":"owner","type":"address"},{"indexed":false,"name":"serviceId","type":"uint256"}],"name":"NewService","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"serviceId","type":"uint256"},{"indexed":false,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"NewSubscription","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"closedAt","type":"uint256"}],"name":"Cancel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
+const jsonAbi = `[{"constant":false,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"subscribe","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdNonce","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"name","type":"string"},{"name":"endpoint","type":"string"},{"name":"price","type":"uint256"},{"name":"cancellationTime","type":"uint256"}],"name":"addService","outputs":[],"type":"function"},{"constant":true,"inputs":[],"name":"serviceLength","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifyPayment","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdClosedAt","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"}],"name":"makeSubscriptionId","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"cancel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionServiceId","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"isValidSubscription","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"getService","outputs":[{"name":"name","type":"string"},{"name":"endpoint","type":"string"},{"name":"price","type":"uint256"},{"name":"cancellationTime","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionIdValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifySignature","outputs":[{"name":"","type":"bool"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"name","type":"string"},{"indexed":true,"name":"owner","type":"address"},{"indexed":false,"name":"serviceId","type":"uint256"}],"name":"NewService","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"serviceId","type":"uint256"},{"indexed":false,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"NewSubscription","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"closedAt","type":"uint256"}],"name":"Cancel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
