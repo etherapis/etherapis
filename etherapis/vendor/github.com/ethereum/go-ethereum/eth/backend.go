@@ -269,12 +269,12 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   NewPublicTransactionPoolAPI(s.TxPool(), s.Miner(), s.ChainDb(), s.EventMux(), s.BlockChain(), s.AccountManager()),
+			Service:   NewPublicTransactionPoolAPI(s),
 			Public:    true,
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   miner.NewPublicMinerAPI(s.Miner()),
+			Service:   NewPublicMinerAPI(s),
 			Public:    true,
 		}, {
 			Namespace: "eth",

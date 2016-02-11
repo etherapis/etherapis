@@ -47,10 +47,7 @@ import (
 	"gopkg.in/fatih/set.v0"
 )
 
-const (
-	defaultGasPrice = uint64(10000000000000)
-	defaultGas      = uint64(90000)
-)
+const defaultGas = uint64(90000)
 
 // blockByNumber is a commonly used helper function which retrieves and returns
 // the block for the given block number, capable of handling two special blocks:
@@ -152,21 +149,79 @@ func (s *PublicEthereumAPI) Hashrate() *rpc.HexNumber {
 }
 
 // Syncing returns false in case the node is currently not synching with the network. It can be up to date or has not
-// yet received the latest block headers from its pears. In case it is synchronizing an object with 3 properties is
-// returned:
+// yet received the latest block headers from its pears. In case it is synchronizing:
 // - startingBlock: block number this node started to synchronise from
-// - currentBlock: block number this node is currently importing
-// - highestBlock: block number of the highest block header this node has received from peers
+// - currentBlock:  block number this node is currently importing
+// - highestBlock:  block number of the highest block header this node has received from peers
+// - pulledStates:  number of state entries processed until now
+// - knownStates:   number of known state entries that still need to be pulled
 func (s *PublicEthereumAPI) Syncing() (interface{}, error) {
-	origin, current, height := s.e.Downloader().Progress()
-	if current < height {
-		return map[string]interface{}{
-			"startingBlock": rpc.NewHexNumber(origin),
-			"currentBlock":  rpc.NewHexNumber(current),
-			"highestBlock":  rpc.NewHexNumber(height),
-		}, nil
+	origin, current, height, pulled, known := s.e.Downloader().Progress()
+
+	// Return not syncing if the synchronisation already completed
+	if current >= height {
+		return false, nil
 	}
-	return false, nil
+	// Otherwise gather the block sync stats
+	return map[string]interface{}{
+		"startingBlock": rpc.NewHexNumber(origin),
+		"currentBlock":  rpc.NewHexNumber(current),
+		"highestBlock":  rpc.NewHexNumber(height),
+		"pulledStates":  rpc.NewHexNumber(pulled),
+		"knownStates":   rpc.NewHexNumber(known),
+	}, nil
+}
+
+// PublicMinerAPI provides an API to control the miner.
+// It offers only methods that operate on data that pose no security risk when it is publicly accessible.
+type PublicMinerAPI struct {
+	e     *Ethereum
+	agent *miner.RemoteAgent
+}
+
+// NewPublicMinerAPI create a new PublicMinerAPI instance.
+func NewPublicMinerAPI(e *Ethereum) *PublicMinerAPI {
+	agent := miner.NewRemoteAgent()
+	e.Miner().Register(agent)
+
+	return &PublicMinerAPI{e, agent}
+}
+
+// Mining returns an indication if this node is currently mining.
+func (s *PublicMinerAPI) Mining() bool {
+	return s.e.IsMining()
+}
+
+// SubmitWork can be used by external miner to submit their POW solution. It returns an indication if the work was
+// accepted. Note, this is not an indication if the provided work was valid!
+func (s *PublicMinerAPI) SubmitWork(nonce rpc.HexNumber, solution, digest common.Hash) bool {
+	return s.agent.SubmitWork(nonce.Uint64(), digest, solution)
+}
+
+// GetWork returns a work package for external miner. The work package consists of 3 strings
+// result[0], 32 bytes hex encoded current block header pow-hash
+// result[1], 32 bytes hex encoded seed hash used for DAG
+// result[2], 32 bytes hex encoded boundary condition ("target"), 2^256/difficulty
+func (s *PublicMinerAPI) GetWork() ([]string, error) {
+	if !s.e.IsMining() {
+		if err := s.e.StartMining(0, ""); err != nil {
+			return nil, err
+		}
+	}
+	if work, err := s.agent.GetWork(); err == nil {
+		return work[:], nil
+	} else {
+		glog.Infof("%v\n", err)
+	}
+	return nil, fmt.Errorf("mining not ready")
+}
+
+// SubmitHashrate can be used for remote miners to submit their hash rate. This enables the node to report the combined
+// hash rate of all miners which submit work through this node. It accepts the miner hash rate and an identifier which
+// must be unique between nodes.
+func (s *PublicMinerAPI) SubmitHashrate(hashrate rpc.HexNumber, id common.Hash) bool {
+	s.agent.SubmitHashrate(id, hashrate.Uint64())
+	return true
 }
 
 // PrivateMinerAPI provides private RPC methods to control the miner.
@@ -762,6 +817,7 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 type PublicTransactionPoolAPI struct {
 	eventMux *event.TypeMux
 	chainDb  ethdb.Database
+	gpo      *GasPriceOracle
 	bc       *core.BlockChain
 	miner    *miner.Miner
 	am       *accounts.Manager
@@ -770,14 +826,15 @@ type PublicTransactionPoolAPI struct {
 }
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
-func NewPublicTransactionPoolAPI(txPool *core.TxPool, m *miner.Miner, chainDb ethdb.Database, eventMux *event.TypeMux, bc *core.BlockChain, am *accounts.Manager) *PublicTransactionPoolAPI {
+func NewPublicTransactionPoolAPI(e *Ethereum) *PublicTransactionPoolAPI {
 	return &PublicTransactionPoolAPI{
-		eventMux: eventMux,
-		chainDb:  chainDb,
-		bc:       bc,
-		am:       am,
-		txPool:   txPool,
-		miner:    m,
+		eventMux: e.EventMux(),
+		gpo:      NewGasPriceOracle(e),
+		chainDb:  e.ChainDb(),
+		bc:       e.BlockChain(),
+		am:       e.AccountManager(),
+		txPool:   e.TxPool(),
+		miner:    e.Miner(),
 	}
 }
 
@@ -970,7 +1027,7 @@ func (s *PublicTransactionPoolAPI) SendTransaction(args SendTxArgs) (common.Hash
 		args.Gas = rpc.NewHexNumber(defaultGas)
 	}
 	if args.GasPrice == nil {
-		args.GasPrice = rpc.NewHexNumber(defaultGasPrice)
+		args.GasPrice = rpc.NewHexNumber(s.gpo.SuggestPrice())
 	}
 	if args.Value == nil {
 		args.Value = rpc.NewHexNumber(0)
@@ -1111,7 +1168,7 @@ func (tx *Tx) UnmarshalJSON(b []byte) (err error) {
 		tx.GasLimit = rpc.NewHexNumber(0)
 	}
 	if tx.GasPrice == nil {
-		tx.GasPrice = rpc.NewHexNumber(defaultGasPrice)
+		tx.GasPrice = rpc.NewHexNumber(int64(50000000000))
 	}
 
 	if contractCreation {
@@ -1154,7 +1211,7 @@ func (s *PublicTransactionPoolAPI) SignTransaction(args *SignTransactionArgs) (*
 		args.Gas = rpc.NewHexNumber(defaultGas)
 	}
 	if args.GasPrice == nil {
-		args.GasPrice = rpc.NewHexNumber(defaultGasPrice)
+		args.GasPrice = rpc.NewHexNumber(s.gpo.SuggestPrice())
 	}
 	if args.Value == nil {
 		args.Value = rpc.NewHexNumber(0)

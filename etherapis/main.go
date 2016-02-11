@@ -156,17 +156,6 @@ func main() {
 		return
 	}
 
-	// Wait for network connectivity and monitor synchronization
-	log15.Info("Searching for network peers...")
-	server := client.Stack().Server()
-	for len(server.Peers()) == 0 {
-		time.Sleep(100 * time.Millisecond)
-	}
-	go monitorSync(api)
-
-	// Make sure we're at least semi recent on the chain before continuing
-	waitSync(*syncFlag, api)
-
 	// Depending on the flags, execute different things
 	switch {
 

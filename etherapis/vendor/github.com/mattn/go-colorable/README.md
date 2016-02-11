@@ -17,7 +17,6 @@ This package is possible to handle escape sequence for ansi color on windows.
 ## Usage
 
 ```go
-logrus.SetFormatter(&logrus.TextFormatter{ForceColors: true})
 logrus.SetOutput(colorable.NewColorableStdout())
 
 logrus.Info("succeeded")
