@@ -12,15 +12,7 @@ import (
 // New creates an HTTP route multiplexer injected with all the various components
 // required to run the dashboard: static assets and API endpoints.
 func New(ethereum *geth.API, assetsPath string) *http.ServeMux {
-	// Create an API to expose various internals
-	api := newApi(ethereum)
-
-	// Register all the API handler endpoints
 	router := http.NewServeMux()
-
-	router.HandleFunc("/api/ethereum/peers", api.PeersHandler)
-	router.HandleFunc("/api/ethereum/syncing", api.SyncingHandler)
-	router.HandleFunc("/api/ethereum/head", api.HeadHandler)
 
 	// Register the static asset handler
 	if assetsPath != "" {
@@ -28,6 +20,9 @@ func New(ethereum *geth.API, assetsPath string) *http.ServeMux {
 	} else {
 		router.HandleFunc("/", handleAsset)
 	}
+	// Register the various API handlers
+	router.Handle("/api/v0/", newAPIServeMux("/api/v0/", ethereum))
+
 	return router
 }
 
