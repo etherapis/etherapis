@@ -1,3 +1,25 @@
+// Provider is the content page that displays stats about the users current
+// provided APIs, proxies, configurations, etc.
+var Provider = React.createClass({
+  render: function() {
+    // Short circuit rendering if we're not on the tutorial page
+    if (this.props.hide) {
+      return null
+    }
+    return (
+      <div>
+        <div className="row">
+          <div className="col-lg-12">
+            <Proxies/>
+            <Vault/>
+          </div>
+        </div>
+      </div>
+    );
+  }
+});
+window.Provider = Provider // Expose the component
+
 var Proxy = React.createClass({
   render: function() {
     return (
@@ -17,9 +39,6 @@ var Proxy = React.createClass({
 
 var Proxies = React.createClass({
   render: function() {
-    if (this.props.hide) {
-      return null
-    }
     return (
       <div>
         <div className="row">
@@ -35,13 +54,9 @@ var Proxies = React.createClass({
     )
   }
 });
-window.Proxies = Proxies
 
 var Vault = React.createClass({
   render: function() {
-    if (this.props.hide) {
-      return null
-    }
     return (
       <div>
         <div className="row">
@@ -87,4 +102,3 @@ var Vault = React.createClass({
     );
   }
 });
-window.Vault = Vault
