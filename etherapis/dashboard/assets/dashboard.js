@@ -43,9 +43,7 @@ var Dashboard = React.createClass({
                 <li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
                 <li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
               </ul>
-              <div className="navbar-right">
-                <EthereumStats ajax={this.apiCall} apiurl={this.props.apiurl + "/ethereum"} refresh={1000}/>
-              </div>
+              <EthereumStats ajax={this.apiCall} apiurl={this.props.apiurl + "/ethereum"} refresh={1000}/>
             </div>
           </div>
         </nav>
