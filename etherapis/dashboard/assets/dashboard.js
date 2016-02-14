@@ -7,7 +7,9 @@ var Dashboard = React.createClass({
   getInitialState: function() {
     return {
       section: "index",
-      apiOnline: true, apiFailure: ""};
+      apiOnline: true, apiFailure: "",
+      needSync: false,
+    };
   },
 
   loadIndex:      function() { this.setState({section: "index"}); },
@@ -29,6 +31,9 @@ var Dashboard = React.createClass({
       }.bind(this)
     });
   },
+  needSync: function(needed) {
+    this.setState({needSync: needed});
+  },
   render: function() {
     return (
       <div>
@@ -43,12 +48,13 @@ var Dashboard = React.createClass({
                 <li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
                 <li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
               </ul>
-              <EthereumStats ajax={this.apiCall} apiurl={this.props.apiurl + "/ethereum"} refresh={1000}/>
+              <EthereumStats ajax={this.apiCall} apiurl={this.props.apiurl + "/ethereum"} refresh={1000} nosync={this.needSync}/>
             </div>
           </div>
         </nav>
         <div className="container">
           <BackendError hide={this.state.apiOnline}/>
+          <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
           <Provider hide={this.state.section != "provider"}/>
@@ -79,6 +85,29 @@ var BackendError = React.createClass({
         <div className="col-lg-6">
           <div className="alert alert-danger text-center" role="alert">
             <i className="fa fa-exclamation-triangle"></i> <strong>Backend offline!</strong> Please check console for details...
+          </div>
+        </div>
+      </div>
+    )
+  }
+});
+
+// NotSyncedWarning is a UI component displaying a warning message when the local
+// blockchain is older than a certain threshold.
+//
+// Properties:
+//   hide: Flag whether to hide or show the error - bool
+var NotSyncedWarning = React.createClass({
+  render: function() {
+    if (this.props.hide) {
+      return null
+    }
+    return (
+      <div className="row">
+        <div className="col-lg-3"></div>
+        <div className="col-lg-6">
+          <div className="alert alert-warning text-center" role="alert">
+            <i className="fa fa-spinner fa-spin"></i> <strong>Local state too old.</strong> Please wait for network sync...
           </div>
         </div>
       </div>
