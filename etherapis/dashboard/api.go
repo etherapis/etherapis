@@ -3,9 +3,14 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
+	"github.com/etherapis/etherapis/etherapis/channels"
 	"github.com/etherapis/etherapis/etherapis/geth"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/gorilla/mux"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -13,24 +18,87 @@ import (
 // each submodule.
 type api struct {
 	ethereum *geth.API
+	contract *channels.Subscriptions
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
 // and returns the HTTP route multipelxer to embed in the main handler.
-func newAPIServeMux(base string, ethereum *geth.API) *http.ServeMux {
+func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *geth.API) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
 		ethereum: ethereum,
+		contract: contract,
 	}
 	// Register all the API handler endpoints
-	router := http.NewServeMux()
+	router := mux.NewRouter()
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"ethereum/peers", handler.PeerInfos)
 	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
 	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
+	router.HandleFunc(base+"services/{addresses}", handler.Services)
+	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
 
 	return router
+}
+
+// Services retrieves the given address' services.
+func (a *api) Services(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	addresses, exist := vars["addresses"]
+	if !exist {
+		log15.Error("Failed to retrieve services", "error", "no address specified")
+		http.Error(w, "no address specified", http.StatusInternalServerError)
+		return
+	}
+
+	var services []channels.Service
+	// addresses is a comma separated list of addresseses
+	for _, addr := range strings.Split(addresses, ",") {
+		srvs, err := a.contract.Services(common.HexToAddress(addr))
+		if err != nil {
+			log15.Error("Failed to retrieve services", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		services = append(services, srvs...)
+	}
+
+	out, err := json.Marshal(services)
+	if err != nil {
+		log15.Error("Failed to retrieve services", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(out)
+}
+
+// Subscriptions retrieves the given address' subscriptions.
+func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	addr, exist := vars["address"]
+	if !exist {
+		log15.Error("Failed to retrieve subscriptions", "error", "no address specified")
+		http.Error(w, "no address specified", http.StatusInternalServerError)
+		return
+	}
+
+	services, err := a.contract.Subscriptions(common.HexToAddress(addr))
+	if err != nil {
+		log15.Error("Failed to retrieve subscriptions", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out, err := json.Marshal(services)
+	if err != nil {
+		log15.Error("Failed to marshal subscriptions", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(out)
 }
 
 // Accounts retrieves the accounts currently owned by the node.

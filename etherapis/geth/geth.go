@@ -42,7 +42,7 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 	// Configure the node's service container
 	stackConf := &node.Config{
 		DataDir:        datadir,
-		IpcPath:        "geth.ipc",
+		IPCPath:        "geth.ipc",
 		Name:           common.MakeName(NodeName, NodeVersion),
 		BootstrapNodes: bootnodes,
 		ListenAddr:     fmt.Sprintf(":%d", NodePort),
@@ -113,7 +113,7 @@ func (g *Geth) Keystore() crypto.KeyStore {
 // Attach connects to the running node's IPC exposed APIs, and returns an Go API
 // interface.
 func (g *Geth) Attach() (*API, error) {
-	client, err := rpc.NewIPCClient(g.stack.IpcEndpoint())
+	client, err := rpc.NewIPCClient(g.stack.IPCEndpoint())
 	if err != nil {
 		return nil, err
 	}

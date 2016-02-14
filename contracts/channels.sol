@@ -16,6 +16,11 @@ contract ServiceProviders {
 	}
 	Service[] services;
 
+	mapping(address => int[]) public userServices;
+	function userServicesLength(address addr) constant returns(uint) {
+		return userServices[addr].length;
+	}
+
 	event NewService(string indexed name, address indexed owner, uint serviceId);
 
 	function addService(string name, string endpoint, uint price, uint cancellationTime) {
@@ -28,14 +33,15 @@ contract ServiceProviders {
 		service.terms.price = price;
 		service.terms.cancellationTime = cancellationTime;
 
+		userServices[msg.sender].push(service.id);
 		services.push(service);
 
 		NewService(name, msg.sender, service.id);
 	}
 
-	function getService(uint serviceId) constant returns(string name, string endpoint, uint price, uint cancellationTime) {
+	function getService(uint serviceId) constant returns(string name, address owner, string endpoint, uint price, uint cancellationTime) {
 		Service service = services[serviceId];
-		return (service.name, service.endpoint, service.terms.price, service.terms.cancellationTime);
+		return (service.name, service.owner, service.endpoint, service.terms.price, service.terms.cancellationTime);
 	}
 
 	function serviceLength() constant returns(uint) {
@@ -97,6 +103,7 @@ contract Subscriptions {
 		Subscription ch = subscriptions[subscriptionId];
 
 		if( ch.nonce != nonce ) return;
+		if( ch.service.owner != msg.sender ) throw;
 
 		if( value > ch.value ) {
 			ch.service.owner.send(ch.value);
@@ -141,9 +148,9 @@ contract Subscriptions {
 	}
 
 	function getSubscription(bytes32 subscriptionId) constant returns(address from, uint serviceId, uint nonce, uint value, bool cancelled, uint closedAt) {
-		Subscription ch = subscriptions[subscription]
+		Subscription ch = subscriptions[subscriptionId];
 
-		return (ch.from, ch.services.id, ch.nonce, ch.value, ch.cancelled, ch.closedAt);
+		return (ch.from, ch.service.id, ch.nonce, ch.value, ch.cancelled, ch.closedAt);
 	}
 
 	function getSubscriptionValue(bytes32 subscriptionId) constant returns(uint256) {
@@ -173,13 +180,24 @@ contract Subscriptions {
 }
 
 contract EtherApis is Subscriptions, ServiceProviders {
+	mapping(address => bytes32[]) public userSubscriptions;
+	function userSubscriptionsLength(address addr) constant returns(uint) {
+		return userSubscriptions[addr].length;
+	}
+
 	function subscribe(uint serviceId) {
 		bytes32 subscriptionId = makeSubscriptionId(msg.sender, serviceId);
 		Subscription ch = subscriptions[subscriptionId];
 
-		Service service = services[serviceId];
-		subscriptions[subscriptionId] = Subscription(msg.sender, service, 0, msg.value, false, 0, true);
+		if( !ch.exist )  {
+			Service service = services[serviceId];
 
-		NewSubscription(msg.sender, serviceId, subscriptionId, ch.nonce);
+			subscriptions[subscriptionId] = Subscription(msg.sender, service, 0, msg.value, false, 0, true);
+			userSubscriptions[msg.sender].push(subscriptionId);
+
+			NewSubscription(msg.sender, serviceId, subscriptionId, ch.nonce);
+		}
+
 	}
 }
+

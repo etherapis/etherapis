@@ -9,6 +9,7 @@ var Dashboard = React.createClass({
       section: "index",
       apiOnline: true, apiFailure: "",
       needSync: false,
+      address: "0x85f095fc28c708831f45c604706b026e90d82fd5",
     };
   },
 
@@ -57,7 +58,7 @@ var Dashboard = React.createClass({
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Provider hide={this.state.section != "provider"}/>
+          <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.address} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"}/>
         </div>
