@@ -83,17 +83,6 @@ func main() {
 		log15.Crit("Failed to attach to node", "error", err)
 		return
 	}
-	// Create the etherapis dashboard and run it
-	if *dashboardFlag != 0 {
-		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
-		go func() {
-			http.Handle("/", dashboard.New(api, *dashboardAssetsFlag))
-			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
-				log15.Crit("Failed to start dashboard", "error", err)
-				os.Exit(-1)
-			}
-		}()
-	}
 	// Wait for network connectivity and monitor synchronization
 	log15.Info("Searching for network peers...")
 	server := client.Stack().Server()
@@ -115,6 +104,18 @@ func main() {
 	if err != nil {
 		log15.Crit("Failed to get contract", "error", err)
 		return
+	}
+
+	// Create the etherapis dashboard and run it
+	if *dashboardFlag != 0 {
+		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
+		go func() {
+			http.Handle("/", dashboard.New(contract, api, *dashboardAssetsFlag))
+			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
+				log15.Crit("Failed to start dashboard", "error", err)
+				os.Exit(-1)
+			}
+		}()
 	}
 
 	if *signFlag != "" {
