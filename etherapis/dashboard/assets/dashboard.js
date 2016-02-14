@@ -9,7 +9,7 @@ var Dashboard = React.createClass({
       section: "index",
       apiOnline: true, apiFailure: "",
       needSync: false,
-      address: "0x85f095fc28c708831f45c604706b026e90d82fd5",
+      account: "",
     };
   },
 
@@ -17,6 +17,12 @@ var Dashboard = React.createClass({
   loadProvider:   function() { this.setState({section: "provider"}); },
   loadSubscriber: function() { this.setState({section: "subscriber"}); },
   loadMarket:     function() { this.setState({section: "market"}); },
+  loadAccount:    function() { this.setState({section: "account"}); },
+
+  // refreshAccount retrieves the current account configured
+  refreshAccount: function() {
+    this.props.ajax(this.props.apiurl + "/peers", function(data) { this.setState({peers: data}); }.bind(this));
+  },
 
   apiCall: function(url, success) {
     $.ajax({url: url, dataType: 'json', cache: false,
@@ -45,6 +51,7 @@ var Dashboard = React.createClass({
             </div>
             <div className="navbar-collapse collapse">
               <ul className="nav navbar-nav">
+                <li><a href="#" onClick={this.loadAccount}><i className="fa fa-user-secret"></i> Account</a></li>
                 <li><a href="#" onClick={this.loadProvider}><i className="fa fa-cloud-upload"></i> Provided</a></li>
                 <li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
                 <li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
@@ -58,10 +65,12 @@ var Dashboard = React.createClass({
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.address} />
+          <Account hide={this.state.section != "account"}/>
+          <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.account} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"}/>
         </div>
+        <TestnetFooter hide={false}/>
       </div>
     );
   }
@@ -111,6 +120,23 @@ var NotSyncedWarning = React.createClass({
             <i className="fa fa-spinner fa-spin"></i> <strong>Local state too old.</strong> Please wait for network sync...
           </div>
         </div>
+      </div>
+    )
+  }
+});
+
+// TestnetFooter is a UI component that displays a small information message when
+// the node is connected to the Morden test network.
+var TestnetFooter = React.createClass({
+  render: function() {
+    if (this.props.hide) {
+      return null
+    }
+    return (
+      <div style={{position: "absolute", bottom: 0, width: "100%", height: "52px"}}>
+          <div className="alert alert-info   text-center" role="alert" style={{marginBottom: 0}}>
+            <i className="fa fa-info-circle"></i> This instance is currently configured to use the <strong>test network</strong>. Consider everything here a consequence free playground.
+          </div>
       </div>
     )
   }
