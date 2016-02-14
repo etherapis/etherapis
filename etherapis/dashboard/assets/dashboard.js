@@ -4,13 +4,20 @@
 // Properties:
 //   apiurl: Base path for the API access - string
 var Dashboard = React.createClass({
+  // getInitialState sets the zero values of the component.
   getInitialState: function() {
     return {
-      section: "index",
-      apiOnline: true, apiFailure: "",
-      needSync: false,
-      account: "",
+      section:    "index",
+      apiOnline:  true,
+      apiFailure: "",
+      needSync:   false,
+      accounts:    null,
     };
+  },
+  // componentDidMount is invoked when the status component finishes loading. It
+  // loads up the Ethereum account used by the Ether APIs server.
+  componentDidMount: function() {
+    this.refreshAccount();
   },
 
   loadIndex:      function() { this.setState({section: "index"}); },
@@ -19,9 +26,12 @@ var Dashboard = React.createClass({
   loadMarket:     function() { this.setState({section: "market"}); },
   loadAccount:    function() { this.setState({section: "account"}); },
 
-  // refreshAccount retrieves the current account configured
+  // refreshAccount retrieves the current account configured, and if successful,
+  // also loads up any associated data.
   refreshAccount: function() {
-    this.props.ajax(this.props.apiurl + "/peers", function(data) { this.setState({peers: data}); }.bind(this));
+    this.apiCall(this.props.apiurl + "/accounts", function(accounts) {
+      this.setState({accounts: accounts.sort()});
+    }.bind(this));
   },
 
   apiCall: function(url, success) {
@@ -51,7 +61,7 @@ var Dashboard = React.createClass({
             </div>
             <div className="navbar-collapse collapse">
               <ul className="nav navbar-nav">
-                <li><a href="#" onClick={this.loadAccount}><i className="fa fa-user-secret"></i> Account</a></li>
+                <li><a href="#" onClick={this.loadAccount}><i className="fa fa-user"></i> Account</a></li>
                 <li><a href="#" onClick={this.loadProvider}><i className="fa fa-cloud-upload"></i> Provided</a></li>
                 <li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
                 <li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
@@ -65,8 +75,8 @@ var Dashboard = React.createClass({
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Account hide={this.state.section != "account"}/>
-          <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.account} />
+          <Accounts hide={this.state.section != "account"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts}/>
+          <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"}/>
         </div>
