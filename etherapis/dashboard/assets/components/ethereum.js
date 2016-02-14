@@ -10,9 +10,10 @@ var EthereumStats = React.createClass({
   // getInitialState sets the zero values of the component.
   getInitialState: function() {
     return {
-      syncing: false,
-      peers:   [],
-      head:    null,
+      syncing:   false,
+      threshold: 180 * 1000,
+      peers:     [],
+      head:      null,
     };
   },
   // componentDidMount is invoked when the status component finishes loading. It
@@ -24,7 +25,9 @@ var EthereumStats = React.createClass({
   },
   // refreshSyncing retrieves the sync status/progress of the Ethereum client.
   refreshSyncing: function() {
-    this.props.ajax(this.props.apiurl + "/syncing", function(syncing) { this.setState({syncing: syncing}); }.bind(this));
+    this.props.ajax(this.props.apiurl + "/syncing", function(syncing) {
+      this.setState({syncing: syncing});
+    }.bind(this));
   },
   // refreshPeers retrieves the list of connected peers and injects them into
   // the local state for sub-component interpretation.
@@ -33,7 +36,10 @@ var EthereumStats = React.createClass({
   },
   // refreshHead retrieves the current head block of the Ethereum blockchain.
   refreshHead: function() {
-    this.props.ajax(this.props.apiurl + "/head", function(head) { this.setState({head: head}); }.bind(this));
+    this.props.ajax(this.props.apiurl + "/head", function(head) {
+      this.setState({head: head});
+      this.props.nosync(moment().diff(moment.unix(head.timestamp)) >= this.state.threshold);
+    }.bind(this));
   },
   // render flattens the Ethereum stats into UI report objects.
   render: function() {
