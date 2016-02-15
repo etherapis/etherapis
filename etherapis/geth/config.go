@@ -13,6 +13,6 @@ const (
 const (
 	NodeName     = "Geth/EtherAPIs" // Client name to advertise on the Ethereum network
 	NodeVersion  = "0.1.0"          // Client version to advertise on the Ethereum network
-	NodePort     = 30303            // Listener port of the Ethereum P2P network
+	NodePort     = 55555            // Listener port of the Ethereum P2P network
 	NodeMaxPeers = 25               // Maximum number of peers connections to accept
 )

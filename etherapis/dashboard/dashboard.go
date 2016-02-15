@@ -5,14 +5,16 @@ package dashboard
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/etherapis/etherapis/etherapis/channels"
 	"github.com/etherapis/etherapis/etherapis/geth"
+	"github.com/ethereum/go-ethereum/eth"
 )
 
 // New creates an HTTP route multiplexer injected with all the various components
 // required to run the dashboard: static assets and API endpoints.
-func New(contract *channels.Subscriptions, ethereum *geth.API, assetsPath string) *http.ServeMux {
+func New(contract *channels.Subscriptions, ethereum *eth.Ethereum, gethAPI *geth.API, assetsPath string) *http.ServeMux {
 	router := http.NewServeMux()
 
 	// Register the static asset handler
@@ -22,7 +24,7 @@ func New(contract *channels.Subscriptions, ethereum *geth.API, assetsPath string
 		router.HandleFunc("/", handleAsset)
 	}
 	// Register the various API handlers
-	router.Handle("/api/v0/", newAPIServeMux("/api/v0/", contract, ethereum))
+	router.Handle("/api/v0/", newAPIServeMux("/api/v0/", contract, ethereum, gethAPI))
 
 	return router
 }
@@ -36,6 +38,12 @@ func handleAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	// Retrieve the asset and return it, or error out
 	if data, err := Asset(path); err == nil {
+		// Certain file types cause issues in the browser if not tagged correctly
+		switch {
+		case strings.HasSuffix(path, ".css"):
+			w.Header().Set("Content-Type", "text/css")
+		}
+		// Write the data itself
 		w.Write(data)
 		return
 	}

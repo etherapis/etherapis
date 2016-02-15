@@ -91,9 +91,7 @@ func main() {
 	}
 	go monitorSync(api)
 
-	// Make sure we're at least semi recent on the chain before continuing
-	waitSync(*syncFlag, api)
-
+	// Retrieve the Ether APIs marketplace and payment contract
 	var eth *eth.Ethereum
 	err = client.Stack().Service(&eth)
 	if err != nil {
@@ -110,13 +108,15 @@ func main() {
 	if *dashboardFlag != 0 {
 		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
 		go func() {
-			http.Handle("/", dashboard.New(contract, api, *dashboardAssetsFlag))
+			http.Handle("/", dashboard.New(contract, eth, api, *dashboardAssetsFlag))
 			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
 				log15.Crit("Failed to start dashboard", "error", err)
 				os.Exit(-1)
 			}
 		}()
 	}
+	// Make sure we're at least semi recent on the chain before continuing
+	waitSync(*syncFlag, api)
 
 	if *signFlag != "" {
 		var message struct {

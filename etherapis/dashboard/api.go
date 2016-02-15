@@ -10,6 +10,7 @@ import (
 	"github.com/etherapis/etherapis/etherapis/channels"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/gorilla/mux"
 	"gopkg.in/inconshreveable/log15.v2"
 )
@@ -17,16 +18,18 @@ import (
 // api is a wrapper around the etherapis components, exposing various parts of
 // each submodule.
 type api struct {
-	ethereum *geth.API
+	ethereum *eth.Ethereum
+	gethAPI  *geth.API
 	contract *channels.Subscriptions
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
 // and returns the HTTP route multipelxer to embed in the main handler.
-func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *geth.API) *mux.Router {
+func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
 		ethereum: ethereum,
+		gethAPI:  gethAPI,
 		contract: contract,
 	}
 	// Register all the API handler endpoints
@@ -101,21 +104,28 @@ func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
 	w.Write(out)
 }
 
-// Accounts retrieves the accounts currently owned by the node.
+// Accounts retrieves the Ethereum accounts currently configured to be used by the
+// payment proxies and/or the marketplace and subscriptions.
 func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.ethereum.Request("eth_accounts", nil)
+	accounts, err := a.ethereum.AccountManager().Accounts()
 	if err != nil {
-		log15.Error("Failed to retrieve owned accounts", "error", err)
+		log15.Error("Failed to retrieve accounts", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(reply)
+	out, err := json.Marshal(accounts)
+	if err != nil {
+		log15.Error("Failed to marshal account list", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write(out)
 }
 
 // PeerInfos retrieves the currently connected peers and returns them in their
 // raw Ethereum API reply form.
 func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.ethereum.Request("admin_peers", nil)
+	reply, err := a.gethAPI.Request("admin_peers", nil)
 	if err != nil {
 		log15.Error("Failed to retrieve connected peers", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -127,7 +137,7 @@ func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
 // SyncStatus retrieves the current sync status and returns it in its raw
 // Ethereum API reply form.
 func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.ethereum.Request("eth_syncing", nil)
+	reply, err := a.gethAPI.Request("eth_syncing", nil)
 	if err != nil {
 		log15.Error("Failed to retrieve sync status", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -139,7 +149,7 @@ func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
 // HeadBlock retrieves the current head block and returns it in its raw
 // Ethereum API reply form.
 func (a *api) HeadBlock(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.ethereum.Request("eth_getBlockByNumber", []interface{}{"latest", false})
+	reply, err := a.gethAPI.Request("eth_getBlockByNumber", []interface{}{"latest", false})
 	if err != nil {
 		log15.Error("Failed to retrieve head block", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
