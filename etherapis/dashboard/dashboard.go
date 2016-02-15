@@ -5,6 +5,7 @@ package dashboard
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/etherapis/etherapis/etherapis/channels"
 	"github.com/etherapis/etherapis/etherapis/geth"
@@ -37,6 +38,12 @@ func handleAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	// Retrieve the asset and return it, or error out
 	if data, err := Asset(path); err == nil {
+		// Certain file types cause issues in the browser if not tagged correctly
+		switch {
+		case strings.HasSuffix(path, ".css"):
+			w.Header().Set("Content-Type", "text/css")
+		}
+		// Write the data itself
 		w.Write(data)
 		return
 	}
