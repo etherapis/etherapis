@@ -11,7 +11,8 @@ var Dashboard = React.createClass({
       apiOnline:  true,
       apiFailure: "",
       needSync:   false,
-      accounts:    null,
+      accounts:   [],
+      account:    "",
     };
   },
   // componentDidMount is invoked when the status component finishes loading. It
@@ -30,8 +31,13 @@ var Dashboard = React.createClass({
   // also loads up any associated data.
   refreshAccount: function() {
     this.apiCall(this.props.apiurl + "/accounts", function(accounts) {
-      this.setState({accounts: accounts.sort()});
+      var primary = accounts[0];
+      this.setState({accounts: accounts.sort(), account: primary});
     }.bind(this));
+  },
+  // switchAccount switches out the currently active account to the one specified.
+  switchAccount: function(account) {
+    this.setState({account: account});
   },
 
   apiCall: function(url, success) {
@@ -75,7 +81,7 @@ var Dashboard = React.createClass({
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Accounts hide={this.state.section != "account"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts}/>
+          <Accounts hide={this.state.section != "account"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount}/>
           <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>

@@ -18,7 +18,7 @@ var Accounts = React.createClass({
               this.props.accounts.map(function(account) {
                 return (
                   <div key={account} className="col-lg-6">
-                    <Account explorer={this.props.explorer} account={account}/>
+                    <Account explorer={this.props.explorer} account={account} active={account == this.props.active} switch={this.props.accounts.length > 1 ? this.props.switch : null}/>
                   </div>
                 )
               }.bind(this))
@@ -47,6 +47,9 @@ var Account = React.createClass({
       action: "",
     };
   },
+  // activate switches the dashboard to use this particular account.
+  activate: function() { this.props.switch(this.props.account); },
+
   // abortAction restores the account UI into it's default no-action state.
   abortAction: function() { this.setState({action: ""}); },
 
@@ -61,10 +64,10 @@ var Account = React.createClass({
   // render flattens the account stats into a UI panel.
   render: function() {
     return (
-      <div className="panel panel-default">
+      <div className={this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
         <div className="panel-heading">
-          <img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.account, size: 8, scale: 2.5}).toDataURL()}/>
-          <span style={{fontFamily: "monospace"}}>{this.props.account}</span>
+          <img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.account, size: 8, scale: 2}).toDataURL()}/>
+          <span style={{fontFamily: "monospace"}}>{this.props.account}</span>{this.props.active && this.props.switch != null ? " – Active" : null}
           <a href={this.props.explorer + this.props.account} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
         </div>
         <div className="panel-body">
@@ -75,6 +78,8 @@ var Account = React.createClass({
             Subscribed services:
           </div>
           <div className="clearfix">
+            <hr style={{margin: "10px 0"}}/>
+            { this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
             <div className="pull-right">
               <a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
               &nbsp;
