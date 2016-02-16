@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/http"
 	"os"
@@ -20,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"gopkg.in/inconshreveable/log15.v2"
 )
@@ -47,10 +45,8 @@ var (
 	chargeFlag = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
 
 	// Testing and admin flags
-	testFlag    = flag.Bool("test", false, "Runs using the default test vectors for signing and verifying signatures")
-	accGenFlag  = flag.Int("gen", 0, "Generates a batch of (empty) demo accounts and dumps their keys")
-	accLiveFlag = flag.Bool("live", false, "Requests live account generation (funded and uloaded)")
-	signFlag    = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
+	testFlag = flag.Bool("test", false, "Runs using the default test vectors for signing and verifying signatures")
+	signFlag = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
 )
 
 func main() {
@@ -182,96 +178,6 @@ func main() {
 			balance := float64(new(big.Int).Div(state.GetBalance(account.Address), common.Finney).Int64()) / 1000
 			fmt.Printf("Account #%d: %f ether (http://testnet.etherscan.io/address/0x%x)\n", i, balance, account.Address)
 		}
-		return
-
-	case *accGenFlag > 0:
-		// We're generating and dumping demo accounts
-		var nonce uint64
-		var bank accounts.Account
-
-		if *accLiveFlag {
-			// If we want to fund generated accounts, make sure we can
-			accounts, err := eth.AccountManager().Accounts()
-			if err != nil || len(accounts) == 0 {
-				log15.Crit("Failed to retrieve funding account", "accounts", len(accounts), "error", err)
-				return
-			}
-			bank = accounts[0]
-			if err := eth.AccountManager().Unlock(bank.Address, "gophergala"); err != nil {
-				log15.Crit("Failed to unlock funding account", "account", fmt.Sprintf("0x%x", bank.Address), "error", err)
-				return
-			}
-			state, _ := eth.BlockChain().State()
-			nonce = state.GetNonce(bank.Address)
-
-			log15.Info("Funding demo accounts with", "bank", fmt.Sprintf("0x%x", bank.Address), "nonce", nonce)
-		}
-		// Start generating the actual accounts
-		log15.Info("Generating demo accounts", "count", *accGenFlag)
-		for i := 0; i < *accGenFlag; i++ {
-			// Generate a new account
-			account, err := eth.AccountManager().NewAccount("pass")
-			if err != nil {
-				log15.Crit("Failed to generate new account", "error", err)
-				return
-			}
-			// Export it's private key
-			keyPath := fmt.Sprintf("0x%x.key", account.Address)
-			if err := eth.AccountManager().Export(keyPath, account.Address, "pass"); err != nil {
-				log15.Crit("Failed to export account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
-				return
-			}
-			// Clean up so it doesn't clutter out accounts
-			if err := eth.AccountManager().DeleteAccount(account.Address, "pass"); err != nil {
-				log15.Crit("Failed to delete account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
-				return
-			}
-			// If we're just testing, stop here
-			if !*accLiveFlag {
-				log15.Info("Account generated and exported", "path", keyPath)
-				continue
-			}
-			// Oh boy, live accounts, send some ether to it and upload to the faucet
-			allowance := new(big.Int).Mul(big.NewInt(10), common.Ether)
-			price := new(big.Int).Mul(big.NewInt(50), common.Shannon)
-
-			tx := types.NewTransaction(nonce, account.Address, allowance, big.NewInt(21000), price, nil)
-			sig, err := eth.AccountManager().Sign(bank, tx.SigHash().Bytes())
-			if err != nil {
-				log15.Crit("Failed to sign funding transaction", "error", err)
-				return
-			}
-			stx, err := tx.WithSignature(sig)
-			if err != nil {
-				log15.Crit("Failed to assemble funding transaction", "error", err)
-				return
-			}
-			if err := eth.TxPool().Add(stx); err != nil {
-				log15.Crit("Failed to execute transfer", "error", err)
-				return
-			}
-			nonce++
-			log15.Info("Account successfully funded", "account", fmt.Sprintf("0x%x", account.Address))
-
-			// Upload the account to the faucet server
-			key, err := ioutil.ReadFile(keyPath)
-			if err != nil {
-				log15.Crit("Failed to load private key", "error", err)
-				return
-			}
-			res, err := http.Get("https://etherapis.appspot.com/faucet/fund?key=" + string(key))
-			if err != nil {
-				log15.Crit("Failed to upload private key to faucet", "error", err)
-				return
-			}
-			res.Body.Close()
-
-			log15.Info("Account uploaded to faucet", "account", fmt.Sprintf("0x%x", account.Address))
-			os.Remove(keyPath)
-		}
-		// Just wait a bit to ensure transactions get propagated into the network
-		log15.Info("Sleeping to ensure transaction propagation")
-		time.Sleep(10 * time.Second)
 		return
 
 	case len(*serviceFlag) > 0:
