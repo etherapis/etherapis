@@ -46,44 +46,36 @@ func newAPIServeMux(base string, contract *contract.Contract, ethereum *eth.Ethe
 	return router
 }
 
-// Services retrieves the given address' services.
+// Services returns the services for a given address or all services if
+// no list of address is given.
 func (a *api) Services(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
+	var (
+		services []contract.Service
+		err      error
+		vars     = mux.Vars(r)
+	)
+
 	// if there's an address present on the URL return the services
 	// owned by this account.
 	if addresses, exist := vars["addresses"]; exist {
-		a.ownedServices(addresses, w, r)
-		return
-	}
-
-	services, err := a.contract.AllServices()
-	if err != nil {
-		log15.Error("Failed to retrieve services", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	out, err := json.Marshal(services)
-	if err != nil {
-		log15.Error("Failed to retrieve services", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(out)
-}
-
-func (a *api) ownedServices(addresses string, w http.ResponseWriter, r *http.Request) {
-	var services []contract.Service
-	// addresses is a comma separated list of addresseses
-	for _, addr := range strings.Split(addresses, ",") {
-		srvs, err := a.contract.Services(common.HexToAddress(addr))
+		// addresses is a comma separated list of addresseses
+		for _, addr := range strings.Split(addresses, ",") {
+			srvs, err := a.contract.Services(common.HexToAddress(addr))
+			if err != nil {
+				log15.Error("Failed to retrieve services", "error", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			services = append(services, srvs...)
+		}
+	} else {
+		// Get all services
+		services, err = a.contract.AllServices()
 		if err != nil {
 			log15.Error("Failed to retrieve services", "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		services = append(services, srvs...)
 	}
 
 	out, err := json.Marshal(services)

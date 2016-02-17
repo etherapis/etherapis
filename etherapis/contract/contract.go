@@ -69,6 +69,7 @@ func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, cal
 	return &contract, nil
 }
 
+// Stop stops the contract from watching any events that might be present.
 func (c *Contract) Stop() {
 	c.filters.Stop()
 }
@@ -102,6 +103,9 @@ func (c *Contract) ValidateSig(from common.Address, serviceId *big.Int, nonce ui
 	return validSig
 }
 
+// Service represents a service created by the contract.
+//
+// Service is used to unmarshal contract return values in.
 type Service struct {
 	Name             string         `json:"name"`
 	Endpoint         string         `json:"endpoint"`
@@ -111,14 +115,9 @@ type Service struct {
 	Enabled          bool           `json:"enabled"`
 }
 
-type Sub struct {
-	From         common.Address
-	ServiceId    *big.Int
-	Nonce, Value *big.Int
-	Cancelled    bool
-	ClosedAt     *big.Int
-}
-
+// Verify verifies a payment with the given input parameters. It validates the
+// the signature using off-chain verification methods using the EVM and the
+// managed contract.
 func (c *Contract) Verify(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
 	if len(sig) != 65 {
 		// invalid signature
@@ -133,7 +132,7 @@ func (c *Contract) Verify(from common.Address, serviceId *big.Int, nonce uint64,
 		log15.Warn("verifyPayment", "error", err)
 	}
 
-	var subscription Sub
+	var subscription Subscription
 	if err := c.Call(&subscription, "getSubscription", subscriptionId); err != nil {
 		log15.Warn("getService", "error", err)
 	}
@@ -141,6 +140,7 @@ func (c *Contract) Verify(from common.Address, serviceId *big.Int, nonce uint64,
 	return validPayment, subscription.Value.Cmp(amount) >= 0
 }
 
+// Price returns the price associated with the given serviceId.
 func (c *Contract) Price(from common.Address, serviceId *big.Int) *big.Int {
 	var service Service
 	if err := c.Call(&service, "getService", serviceId); err != nil {
@@ -149,9 +149,10 @@ func (c *Contract) Price(from common.Address, serviceId *big.Int) *big.Int {
 	return service.Price
 }
 
+// Nonce returns the nonce associated to a subscription.
 func (c *Contract) Nonce(from common.Address, serviceId *big.Int) (nonce *big.Int) {
 	if err := c.Call(&nonce, "getSubscriptionNonce", c.SubscriptionId(from, serviceId)); err != nil {
-		log15.Warn("getSubscriptionNoce", "error", err)
+		log15.Warn("getSubscriptionNonce", "error", err)
 	}
 	return nonce
 }
@@ -180,9 +181,12 @@ func (c *Contract) Claim(signer common.Address, from common.Address, serviceId *
 	return tx, nil
 }
 
-// helper forwarder
-func (c *Contract) Call(r interface{}, methodName string, v ...interface{}) error {
-	return c.abi.Call(c.exec, r, methodName, v...)
+// Call calls the contract method with v as input and sets the output to r.
+//
+// Call returns an error if the ABI failed parsing the input or if no method is
+// present.
+func (c *Contract) Call(r interface{}, method string, v ...interface{}) error {
+	return c.abi.Call(c.exec, r, method, v...)
 }
 
 // SubscriptionId returns the canonical channel name for transactor and beneficiary
@@ -262,6 +266,7 @@ func (c *Contract) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amount, 
 	return transaction, nil
 }
 
+// Services returns the services associated with the given account in addr.
 func (s *Contract) Services(addr common.Address) ([]Service, error) {
 	var len *big.Int
 	if err := s.Call(&len, "userServicesLength", addr); err != nil {
@@ -283,6 +288,7 @@ func (s *Contract) Services(addr common.Address) ([]Service, error) {
 	return services, nil
 }
 
+// AllServices returns the services currently in existence.
 func (s *Contract) AllServices() ([]Service, error) {
 	var len *big.Int
 	if err := s.Call(&len, "serviceLength"); err != nil {
@@ -299,6 +305,7 @@ func (s *Contract) AllServices() ([]Service, error) {
 	return services, nil
 }
 
+// Subscriptions returns all subscriptions currently in existence.
 func (s *Contract) Subscriptions(addr common.Address) ([]Subscription, error) {
 	var len *big.Int
 	if err := s.Call(&len, "userSubscriptionsLength", addr); err != nil {
@@ -321,6 +328,9 @@ func (s *Contract) Subscriptions(addr common.Address) ([]Subscription, error) {
 	return subscriptions, nil
 }
 
+// Subscription represents a user subscription on a service.
+//
+// Subscription is used to unmarshal contract return values in.
 type Subscription struct {
 	key *ecdsa.PrivateKey
 
@@ -328,6 +338,7 @@ type Subscription struct {
 	From      common.Address `json:"from"`
 	ServiceId *big.Int       `json:"serviceId"`
 	Nonce     *big.Int       `json:"nonce"`
+	Value     *big.Int       `json:"value"`
 	Cancelled bool           `json:"cancelled"`
 	ClosedAt  *big.Int       `json:"closedAt"`
 
@@ -344,13 +355,6 @@ func NewSubscription(contract *Contract, id common.Hash, from common.Address, se
 	}
 }
 
-type Cheque struct {
-	Sig           []byte
-	From          common.Address
-	ServiceId     *big.Int
-	Nonce, Amount *big.Int
-}
-
 // SignPayment returns a signed transaction on the current payment channel.
 func (c *Subscription) SignPayment(amount *big.Int) (Cheque, error) {
 	sig, err := crypto.Sign(sha3(c.Id[:], c.From[:], c.ServiceId.Bytes(), c.Nonce.Bytes(), amount.Bytes()), c.key)
@@ -360,4 +364,13 @@ func (c *Subscription) SignPayment(amount *big.Int) (Cheque, error) {
 	return Cheque{Sig: sig, From: c.From, ServiceId: c.ServiceId, Nonce: c.Nonce, Amount: amount}, nil
 }
 
+// Checque is a signed payment and can be verified off-chain.
+type Cheque struct {
+	Sig           []byte
+	From          common.Address
+	ServiceId     *big.Int
+	Nonce, Amount *big.Int
+}
+
+// contract ABI
 const jsonAbi = `[{"constant":false,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"subscribe","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"addr","type":"address"}],"name":"userServicesLength","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscription","outputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"cancelled","type":"bool"},{"name":"closedAt","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"name","type":"string"},{"name":"endpoint","type":"string"},{"name":"price","type":"uint256"},{"name":"cancellationTime","type":"uint256"}],"name":"addService","outputs":[],"type":"function"},{"constant":true,"inputs":[],"name":"serviceLength","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"claim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"uint256"}],"name":"userServices","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifyPayment","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionClosedAt","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionNonce","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"}],"name":"getHash","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionOwner","outputs":[{"name":"","type":"address"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"reclaim","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionValue","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"from","type":"address"},{"name":"serviceId","type":"uint256"}],"name":"makeSubscriptionId","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"deposit","outputs":[],"type":"function"},{"constant":false,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"cancel","outputs":[],"type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"uint256"}],"name":"userSubscriptions","outputs":[{"name":"","type":"bytes32"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"getSubscriptionServiceId","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"addr","type":"address"}],"name":"userSubscriptionsLength","outputs":[{"name":"","type":"uint256"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"}],"name":"isValidSubscription","outputs":[{"name":"","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"serviceId","type":"uint256"}],"name":"getService","outputs":[{"name":"name","type":"string"},{"name":"owner","type":"address"},{"name":"endpoint","type":"string"},{"name":"price","type":"uint256"},{"name":"cancellationTime","type":"uint256"},{"name":"enabled","type":"bool"}],"type":"function"},{"constant":true,"inputs":[{"name":"subscriptionId","type":"bytes32"},{"name":"nonce","type":"uint256"},{"name":"value","type":"uint256"},{"name":"v","type":"uint8"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"verifySignature","outputs":[{"name":"","type":"bool"}],"type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"name","type":"string"},{"indexed":true,"name":"owner","type":"address"},{"indexed":false,"name":"serviceId","type":"uint256"}],"name":"NewService","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"serviceId","type":"uint256"},{"indexed":false,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"NewSubscription","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"nonce","type":"uint256"}],"name":"Redeem","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"},{"indexed":false,"name":"closedAt","type":"uint256"}],"name":"Cancel","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"subscriptionId","type":"bytes32"}],"name":"Reclaim","type":"event"}]`
