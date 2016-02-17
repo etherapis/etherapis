@@ -1,4 +1,4 @@
-package channels
+package contract
 
 import (
 	"crypto/ecdsa"
@@ -28,12 +28,11 @@ var contractAddress = common.HexToAddress("0x406e9fff90231f97b2f0d2832001b49d57d
 // sign the transaction before submission.
 type signFn func(*types.Transaction) (*types.Transaction, error)
 
-// Subscriptions is the channels contract reflecting that on the ethereum network. The
-// channels contract handles all validation and verifications of payments and
-// allows you to redeem cheques.
+// Contract is the wrapper object that reflects the contract on the Ethereum
+// network.
 //
-// Subscriptions implements the proxy.Verifier and proxy.Charges interfaces.
-type Subscriptions struct {
+// Contract implements the proxy.Verifier and proxy.Charges interfaces.
+type Contract struct {
 	abi        abi.ABI
 	blockchain *core.BlockChain
 
@@ -41,7 +40,7 @@ type Subscriptions struct {
 	mux     *event.TypeMux
 	db      ethdb.Database
 
-	channels  map[common.Hash]*Subscription
+	subs      map[common.Hash]*Subscription
 	channelMu sync.RWMutex
 
 	// call key is a temporary key used to do calls
@@ -50,12 +49,12 @@ type Subscriptions struct {
 	callState func() *state.StateDB
 }
 
-// Fetch initialises a new abi and returns the contract. It does not
+// New initialises a new abi and returns the contract. It does not
 // deploy the contract, hence the name.
-func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, callState func() *state.StateDB) (*Subscriptions, error) {
-	contract := Subscriptions{
+func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, callState func() *state.StateDB) (*Contract, error) {
+	contract := Contract{
 		blockchain: blockchain,
-		channels:   make(map[common.Hash]*Subscription),
+		subs:       make(map[common.Hash]*Subscription),
 		filters:    filters.NewFilterSystem(mux),
 		callState:  callState,
 	}
@@ -70,12 +69,12 @@ func Fetch(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, c
 	return &contract, nil
 }
 
-func (c *Subscriptions) Stop() {
+func (c *Contract) Stop() {
 	c.filters.Stop()
 }
 
 // Exists returns whether there exists a channel between transactor and beneficiary.
-func (c *Subscriptions) Exists(from common.Address, serviceId *big.Int) (exists bool) {
+func (c *Contract) Exists(from common.Address, serviceId *big.Int) (exists bool) {
 	if err := c.Call(&exists, "isValidSubscription", c.SubscriptionId(from, serviceId)); err != nil {
 		log15.Warn("exists", "error", err)
 	}
@@ -87,7 +86,7 @@ func (c *Subscriptions) Exists(from common.Address, serviceId *big.Int) (exists 
 // where H=KECCAK(from, to, amount) and the validation must satisfy:
 // channel_owner == ECRECOVER(H, S) where S is the given signature signed by
 // the sender.
-func (c *Subscriptions) ValidateSig(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (validSig bool) {
+func (c *Contract) ValidateSig(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (validSig bool) {
 	if len(sig) != 65 {
 		// invalid signature
 		return false
@@ -120,7 +119,7 @@ type Sub struct {
 	ClosedAt     *big.Int
 }
 
-func (c *Subscriptions) Verify(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
+func (c *Contract) Verify(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (bool, bool) {
 	if len(sig) != 65 {
 		// invalid signature
 		return false, false
@@ -142,7 +141,7 @@ func (c *Subscriptions) Verify(from common.Address, serviceId *big.Int, nonce ui
 	return validPayment, subscription.Value.Cmp(amount) >= 0
 }
 
-func (c *Subscriptions) Price(from common.Address, serviceId *big.Int) *big.Int {
+func (c *Contract) Price(from common.Address, serviceId *big.Int) *big.Int {
 	var service Service
 	if err := c.Call(&service, "getService", serviceId); err != nil {
 		log15.Warn("getService", "error", err)
@@ -150,7 +149,7 @@ func (c *Subscriptions) Price(from common.Address, serviceId *big.Int) *big.Int 
 	return service.Price
 }
 
-func (c *Subscriptions) Nonce(from common.Address, serviceId *big.Int) (nonce *big.Int) {
+func (c *Contract) Nonce(from common.Address, serviceId *big.Int) (nonce *big.Int) {
 	if err := c.Call(&nonce, "getSubscriptionNonce", c.SubscriptionId(from, serviceId)); err != nil {
 		log15.Warn("getSubscriptionNoce", "error", err)
 	}
@@ -161,7 +160,7 @@ func (c *Subscriptions) Nonce(from common.Address, serviceId *big.Int) (nonce *b
 // Ethereum transaction and submits it to the Ethereum network.
 //
 // Chaim returns the unsigned transaction and an error if it failed.
-func (c *Subscriptions) Claim(signer common.Address, from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (*types.Transaction, error) {
+func (c *Contract) Claim(signer common.Address, from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, sig []byte) (*types.Transaction, error) {
 	if len(sig) != 65 {
 		return nil, fmt.Errorf("Invalid signature. Signature requires to be 65 bytes")
 	}
@@ -182,12 +181,12 @@ func (c *Subscriptions) Claim(signer common.Address, from common.Address, servic
 }
 
 // helper forwarder
-func (c *Subscriptions) Call(r interface{}, methodName string, v ...interface{}) error {
+func (c *Contract) Call(r interface{}, methodName string, v ...interface{}) error {
 	return c.abi.Call(c.exec, r, methodName, v...)
 }
 
 // SubscriptionId returns the canonical channel name for transactor and beneficiary
-func (c *Subscriptions) SubscriptionId(from common.Address, serviceId *big.Int) common.Hash {
+func (c *Contract) SubscriptionId(from common.Address, serviceId *big.Int) common.Hash {
 	var id []byte
 	if err := c.Call(&id, "makeSubscriptionId", from, serviceId); err != nil {
 		log15.Warn("makeSubscriptionId", "error", err)
@@ -196,7 +195,7 @@ func (c *Subscriptions) SubscriptionId(from common.Address, serviceId *big.Int) 
 }
 
 // exec is the executer function callback for the abi `Call` method.
-func (c *Subscriptions) exec(input []byte) []byte {
+func (c *Contract) exec(input []byte) []byte {
 	ret, err := runtime.Call(contractAddress, input, &runtime.Config{
 		GetHashFn: core.GetHashFn(c.blockchain.CurrentBlock().ParentHash(), c.blockchain),
 		State:     c.callState(),
@@ -210,7 +209,7 @@ func (c *Subscriptions) exec(input []byte) []byte {
 }
 
 // Start Go API. Not important for this version
-func (c *Subscriptions) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amount, price *big.Int, cb func(*Subscription)) (*types.Transaction, error) {
+func (c *Contract) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amount, price *big.Int, cb func(*Subscription)) (*types.Transaction, error) {
 	from := crypto.PubkeyToAddress(key.PublicKey)
 
 	data, err := c.abi.Pack("subscribe", serviceId)
@@ -250,10 +249,10 @@ func (c *Subscriptions) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amo
 		c.channelMu.Lock()
 		defer c.channelMu.Unlock()
 
-		channel, exist := c.channels[subscriptionId]
+		channel, exist := c.subs[subscriptionId]
 		if !exist {
 			channel = NewSubscription(c, subscriptionId, from, serviceId, nonce)
-			c.channels[subscriptionId] = channel
+			c.subs[subscriptionId] = channel
 		}
 		cb(channel)
 	}
@@ -263,7 +262,7 @@ func (c *Subscriptions) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amo
 	return transaction, nil
 }
 
-func (s *Subscriptions) Services(addr common.Address) ([]Service, error) {
+func (s *Contract) Services(addr common.Address) ([]Service, error) {
 	var len *big.Int
 	if err := s.Call(&len, "userServicesLength", addr); err != nil {
 		return nil, err
@@ -284,7 +283,7 @@ func (s *Subscriptions) Services(addr common.Address) ([]Service, error) {
 	return services, nil
 }
 
-func (s *Subscriptions) AllServices() ([]Service, error) {
+func (s *Contract) AllServices() ([]Service, error) {
 	var len *big.Int
 	if err := s.Call(&len, "serviceLength"); err != nil {
 		return nil, err
@@ -300,7 +299,7 @@ func (s *Subscriptions) AllServices() ([]Service, error) {
 	return services, nil
 }
 
-func (s *Subscriptions) Subscriptions(addr common.Address) ([]Subscription, error) {
+func (s *Contract) Subscriptions(addr common.Address) ([]Subscription, error) {
 	var len *big.Int
 	if err := s.Call(&len, "userSubscriptionsLength", addr); err != nil {
 		return nil, err
@@ -332,16 +331,16 @@ type Subscription struct {
 	Cancelled bool           `json:"cancelled"`
 	ClosedAt  *big.Int       `json:"closedAt"`
 
-	channels *Subscriptions
+	contract *Contract
 }
 
 // NewSubscription returns a new payment channel.
-func NewSubscription(c *Subscriptions, id common.Hash, from common.Address, serviceId *big.Int, nonce *big.Int) *Subscription {
+func NewSubscription(contract *Contract, id common.Hash, from common.Address, serviceId *big.Int, nonce *big.Int) *Subscription {
 	return &Subscription{
 		Id:        id,
 		From:      from,
 		ServiceId: serviceId,
-		channels:  c,
+		contract:  contract,
 	}
 }
 

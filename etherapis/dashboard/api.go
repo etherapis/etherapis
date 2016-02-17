@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/etherapis/etherapis/etherapis/channels"
+	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
@@ -20,12 +20,12 @@ import (
 type api struct {
 	ethereum *eth.Ethereum
 	gethAPI  *geth.API
-	contract *channels.Subscriptions
+	contract *contract.Contract
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
 // and returns the HTTP route multipelxer to embed in the main handler.
-func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
+func newAPIServeMux(base string, contract *contract.Contract, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
 		ethereum: ethereum,
@@ -74,7 +74,7 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) ownedServices(addresses string, w http.ResponseWriter, r *http.Request) {
-	var services []channels.Service
+	var services []contract.Service
 	// addresses is a comma separated list of addresseses
 	for _, addr := range strings.Split(addresses, ",") {
 		srvs, err := a.contract.Services(common.HexToAddress(addr))
