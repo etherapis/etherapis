@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/etherapis/etherapis/etherapis/channels"
+	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/dashboard"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/etherapis/etherapis/etherapis/proxy"
@@ -98,7 +98,7 @@ func main() {
 		log15.Crit("Failed to fetch eth service", "error", err)
 		return
 	}
-	contract, err := channels.Fetch(eth.ChainDb(), eth.EventMux(), eth.BlockChain(), eth.Miner().PendingState)
+	ethContract, err := contract.New(eth.ChainDb(), eth.EventMux(), eth.BlockChain(), eth.Miner().PendingState)
 	if err != nil {
 		log15.Crit("Failed to get contract", "error", err)
 		return
@@ -108,7 +108,7 @@ func main() {
 	if *dashboardFlag != 0 {
 		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
 		go func() {
-			http.Handle("/", dashboard.New(contract, eth, api, *dashboardAssetsFlag))
+			http.Handle("/", dashboard.New(ethContract, eth, api, *dashboardAssetsFlag))
 			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
 				log15.Crit("Failed to start dashboard", "error", err)
 				os.Exit(-1)
@@ -143,7 +143,7 @@ func main() {
 		serviceId := big.NewInt(message.ServiceId)
 
 		var hash []byte
-		contract.Call(&hash, "getHash", from, serviceId, message.Nonce, message.Amount)
+		ethContract.Call(&hash, "getHash", from, serviceId, message.Nonce, message.Amount)
 		log15.Info("getting hash", "hash", common.ToHex(hash))
 
 		eth.AccountManager().Unlock(from, "")
@@ -285,13 +285,13 @@ func main() {
 		log15.Info("Checking subscription status", "service", fmt.Sprintf("%s", serviceId))
 		for i, account := range accounts {
 			// Check if a subscription exists
-			if !contract.Exists(account.Address, serviceId) {
+			if !ethContract.Exists(account.Address, serviceId) {
 				fmt.Printf("Account #%d: [0x%x]: not subscribed.\n", i, account.Address)
 				continue
 			}
 			// Retrieve the current balance on the subscription
 			var ethers *big.Int
-			contract.Call(&ethers, "getSubscriptionValue", contract.SubscriptionId(account.Address, serviceId))
+			ethContract.Call(&ethers, "getSubscriptionValue", ethContract.SubscriptionId(account.Address, serviceId))
 			funds := float64(new(big.Int).Div(ethers, common.Finney).Int64()) / 1000
 
 			fmt.Printf("Account #%d: [0x%x]: subscribed, with %v ether(s) left.\n", i, account.Address, funds)
@@ -309,7 +309,7 @@ func main() {
 
 		// Check if a subscription exists
 		serviceId := common.String2Big(*subToFlag)
-		if contract.Exists(account.Address, serviceId) {
+		if ethContract.Exists(account.Address, serviceId) {
 			log15.Error("Account already subscribed", "index", *subAccFlag, "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId)
 			return
 		}
@@ -323,8 +323,8 @@ func main() {
 		amount := new(big.Int).Mul(big.NewInt(int64(1000000000**subFundFlag)), common.Shannon)
 
 		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId, "ethers", *subFundFlag)
-		pend := make(chan *channels.Subscription)
-		tx, err := contract.Subscribe(key.PrivateKey, serviceId, amount, big.NewInt(1), func(sub *channels.Subscription) { pend <- sub })
+		pend := make(chan *contract.Subscription)
+		tx, err := ethContract.Subscribe(key.PrivateKey, serviceId, amount, big.NewInt(1), func(sub *contract.Subscription) { pend <- sub })
 		if err != nil {
 			log15.Crit("Failed to create subscription", "error", err)
 			return
@@ -353,9 +353,9 @@ func main() {
 		eth.AccountManager().Unlock(from, "")
 
 		serviceId := big.NewInt(0)
-		log15.Info("making channel name...", "from", from.Hex(), "service-id", serviceId, "id", contract.SubscriptionId(from, serviceId).Hex())
+		log15.Info("making channel name...", "from", from.Hex(), "service-id", serviceId, "id", ethContract.SubscriptionId(from, serviceId).Hex())
 
-		if !contract.Exists(from, serviceId) {
+		if !ethContract.Exists(from, serviceId) {
 			log15.Crit("No subscription found")
 			return
 		}
@@ -364,7 +364,7 @@ func main() {
 		amount := big.NewInt(1)
 
 		var hash []byte
-		contract.Call(&hash, "getHash", from, serviceId, 1, amount)
+		ethContract.Call(&hash, "getHash", from, serviceId, 1, amount)
 		log15.Info("signing data", "service-id", serviceId, "amount", amount, "hash", common.ToHex(hash))
 
 		sig, err := eth.AccountManager().Sign(accounts[0], hash)
@@ -374,7 +374,7 @@ func main() {
 		}
 		log15.Info("verifying signature", "sig", common.ToHex(sig))
 
-		if contract.ValidateSig(from, serviceId, 1, amount, sig) {
+		if ethContract.ValidateSig(from, serviceId, 1, amount, sig) {
 			log15.Info("signature was valid and was verified by the EVM")
 		} else {
 			log15.Crit("signature was invalid")
@@ -382,7 +382,7 @@ func main() {
 		}
 
 		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if valid, _ := contract.Verify(from, serviceId, 1, amount, sig); valid {
+		if valid, _ := ethContract.Verify(from, serviceId, 1, amount, sig); valid {
 			log15.Info("payment was valid and was verified by the EVM")
 		} else {
 			log15.Crit("payment was invalid")
@@ -390,7 +390,7 @@ func main() {
 		}
 
 		log15.Info("verifying invalid payment", "nonce", 2)
-		if valid, _ := contract.Verify(from, serviceId, 2, amount, sig); valid {
+		if valid, _ := ethContract.Verify(from, serviceId, 2, amount, sig); valid {
 			log15.Crit("payment was valid")
 			return
 		} else {
@@ -414,7 +414,7 @@ func main() {
 		log15.Info("Setuping vault...", "owner", account.Address.Hex())
 
 		// Create the payment vault to hold the various authorizations
-		vault := proxy.NewVault(NewCharger(account, eth.TxPool(), contract, eth.AccountManager()))
+		vault := proxy.NewVault(NewCharger(account, eth.TxPool(), ethContract, eth.AccountManager()))
 		vault.AutoCharge(*chargeFlag)
 
 		for i, config := range strings.Split(*proxyFlag, ",") {
@@ -445,7 +445,7 @@ func main() {
 				return
 			}
 			// Create and start the new proxy
-			gateway := proxy.New(i, extPort, intPort, kind, contract, vault)
+			gateway := proxy.New(i, extPort, intPort, kind, ethContract, vault)
 			go func() {
 				if err := gateway.Start(); err != nil {
 					log15.Crit("Failed to start proxy", "error", err)
@@ -494,17 +494,17 @@ func (c *testCharger) Charge(from common.Address, serviceId *big.Int, amount *bi
 
 type Charger struct {
 	txPool         *core.TxPool
-	channels       *channels.Subscriptions
+	contract       *contract.Contract
 	accountManager *accounts.Manager
 	signer         accounts.Account
 }
 
-func NewCharger(signer accounts.Account, txPool *core.TxPool, channels *channels.Subscriptions, am *accounts.Manager) *Charger {
-	return &Charger{txPool: txPool, channels: channels, accountManager: am, signer: signer}
+func NewCharger(signer accounts.Account, txPool *core.TxPool, contract *contract.Contract, am *accounts.Manager) *Charger {
+	return &Charger{txPool: txPool, contract: contract, accountManager: am, signer: signer}
 }
 
 func (c *Charger) Charge(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
-	tx, err := c.channels.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
+	tx, err := c.contract.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
 	if err != nil {
 		return common.Hash{}, err
 	}

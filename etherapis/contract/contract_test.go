@@ -1,4 +1,4 @@
-package channels
+package contract
 
 import "testing"
 

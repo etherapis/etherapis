@@ -10,7 +10,8 @@ var Provider = React.createClass({
       <div>
         <div className="row">
           <div className="col-lg-12">
-            <Proxies ajax={this.props.ajax} apiurl={this.props.apiurl} address={this.props.address}/>
+            <Proxies/>
+	    <Services ajax={this.props.ajax} apiurl={this.props.apiurl} address={this.props.address} refresh={1000}/>
             <Vault/>
           </div>
         </div>
@@ -29,42 +30,24 @@ var Proxy = React.createClass({
             <h3 className="panel-title">{this.props.name}: {this.props.online ? "Online" : "Offline"}</h3>
           </div>
           <div className="panel-body" id="proxies">
-	  	<table>
-			<tr>
-				<td>Endpoint:</td>
-				<td><a href="{this.props.service.endpoint}">{this.props.service.endpoint}</a></td>
-			</tr>
-
-			<tr>
-				<td>Price:</td>
-				<td>{this.props.service.price}</td>
-			</tr>
-
-			<tr>
-				<td>Cancellation time:</td>
-				<td>{this.props.service.cancellationTime}</td>
-			</tr>
-		</table>
+	  	Body here...
           </div>
         </div>
       </div>
     )
   }
 });
-window.Proxy = Proxy;
 
 var Proxies = React.createClass({
   render: function() {
     return (
-      <div>
         <div className="row">
           <div className="col-lg-12">
             <h3>Payment proxies</h3>
+	    <Proxy name="Proxy 1" online={true}/>
+	    <Proxy name="Proxy 2" online={false}/>
           </div>
         </div>
-
-	<Services ajax={this.props.ajax} apiurl={this.props.apiurl} address={this.props.address} refresh={1000}/>
-      </div>
     )
   }
 });

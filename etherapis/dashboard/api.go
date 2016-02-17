@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/etherapis/etherapis/etherapis/channels"
+	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
@@ -20,12 +20,12 @@ import (
 type api struct {
 	ethereum *eth.Ethereum
 	gethAPI  *geth.API
-	contract *channels.Subscriptions
+	contract *contract.Contract
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
 // and returns the HTTP route multipelxer to embed in the main handler.
-func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
+func newAPIServeMux(base string, contract *contract.Contract, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
 		ethereum: ethereum,
@@ -40,31 +40,42 @@ func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth
 	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
 	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
+	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
 
 	return router
 }
 
-// Services retrieves the given address' services.
+// Services returns the services for a given address or all services if
+// no list of address is given.
 func (a *api) Services(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	addresses, exist := vars["addresses"]
-	if !exist {
-		log15.Error("Failed to retrieve services", "error", "no address specified")
-		http.Error(w, "no address specified", http.StatusInternalServerError)
-		return
-	}
+	var (
+		services []contract.Service
+		err      error
+		vars     = mux.Vars(r)
+	)
 
-	var services []channels.Service
-	// addresses is a comma separated list of addresseses
-	for _, addr := range strings.Split(addresses, ",") {
-		srvs, err := a.contract.Services(common.HexToAddress(addr))
+	// if there's an address present on the URL return the services
+	// owned by this account.
+	if addresses, exist := vars["addresses"]; exist {
+		// addresses is a comma separated list of addresseses
+		for _, addr := range strings.Split(addresses, ",") {
+			srvs, err := a.contract.Services(common.HexToAddress(addr))
+			if err != nil {
+				log15.Error("Failed to retrieve services", "error", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			services = append(services, srvs...)
+		}
+	} else {
+		// Get all services
+		services, err = a.contract.AllServices()
 		if err != nil {
 			log15.Error("Failed to retrieve services", "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		services = append(services, srvs...)
 	}
 
 	out, err := json.Marshal(services)
