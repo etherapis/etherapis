@@ -18,7 +18,7 @@ var Dashboard = React.createClass({
   // componentDidMount is invoked when the status component finishes loading. It
   // loads up the Ethereum account used by the Ether APIs server.
   componentDidMount: function() {
-    this.refreshAccount();
+    this.refreshAccounts();
   },
 
   loadIndex:      function() { this.setState({section: "index"}); },
@@ -27,9 +27,9 @@ var Dashboard = React.createClass({
   loadMarket:     function() { this.setState({section: "market"}); },
   loadAccount:    function() { this.setState({section: "account"}); },
 
-  // refreshAccount retrieves the current account configured, and if successful,
+  // refreshAccounts retrieves the current accounts configured, and if successful,
   // also loads up any associated data.
-  refreshAccount: function() {
+  refreshAccounts: function() {
     this.apiCall(this.props.apiurl + "/accounts", function(accounts) {
       var primary = accounts[0];
       this.setState({accounts: accounts.sort(), account: primary});

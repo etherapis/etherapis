@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Geth is a wrapper around the Ethereum Go client.
@@ -42,7 +41,6 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 	// Configure the node's service container
 	stackConf := &node.Config{
 		DataDir:        datadir,
-		IPCPath:        "geth.ipc",
 		Name:           common.MakeName(NodeName, NodeVersion),
 		BootstrapNodes: bootnodes,
 		ListenAddr:     fmt.Sprintf(":%d", NodePort),
@@ -110,10 +108,10 @@ func (g *Geth) Keystore() crypto.KeyStore {
 	return g.keystore
 }
 
-// Attach connects to the running node's IPC exposed APIs, and returns an Go API
+// Attach connects to the running node's IPC exposed APIs, and returns a Go API
 // interface.
 func (g *Geth) Attach() (*API, error) {
-	client, err := rpc.NewIPCClient(g.stack.IPCEndpoint())
+	client, err := g.stack.Attach()
 	if err != nil {
 		return nil, err
 	}

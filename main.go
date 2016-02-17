@@ -1,25 +1,21 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/etherapis/etherapis/etherapis"
 	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/dashboard"
 	"github.com/etherapis/etherapis/etherapis/geth"
-	"github.com/etherapis/etherapis/etherapis/proxy"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/eth"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -28,14 +24,11 @@ var (
 	datadirFlag         = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
 	loglevelFlag        = flag.Int("loglevel", 3, "Log level to use for displaying system events")
 	syncFlag            = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
-	dashboardFlag       = flag.Int("dashboard", 0, "Port number on which to run the dashboard (0 = disabled)")
+	dashboardFlag       = flag.Int("dashboard", 8080, "Port number on which to run the dashboard (0 = disabled)")
 	dashboardAssetsFlag = flag.String("dashboard-assets", "", "Path to the dashboard static assets to use (empty = built in assets)")
+	passwordFlag        = flag.String("password", "", "Master password to use for account management")
 
 	// Management commands
-	importFlag   = flag.String("import", "", "Path to the demo account to import")
-	accountsFlag = flag.Bool("accounts", false, "Lists the available accounts for micro payments")
-	serviceFlag  = flag.String("service", "", "Id of the service to check for a subscription")
-
 	subAccFlag  = flag.Int("subacc", 0, "Own account index with which to subscribe (list with --accounts)")
 	subToFlag   = flag.String("subto", "", "Id of the service to subscribe to")
 	subFundFlag = flag.Float64("subfund", 1, "Initial ether value to fund the subscription with")
@@ -63,58 +56,31 @@ func main() {
 		log15.Crit("Failed to create data directory: %v", err)
 		return
 	}
-	// Assemble and start the Ethereum client
-	log15.Info("Booting Ethereum client...")
-	client, err := geth.New(datadir, geth.TestNet)
+	// Start the Ether APIs client and unlock all used accounts
+	log15.Info("Joining Ethereum network...")
+	client, err := etherapis.New(datadir, geth.TestNet, common.Address{})
 	if err != nil {
-		log15.Crit("Failed to create Ethereum client", "error", err)
+		log15.Crit("Failed to create Ether APIs client", "error", err)
 		return
 	}
-	if err := client.Start(); err != nil {
-		log15.Crit("Failed to start Ethereum client", "error", err)
+	log15.Info("Unlocking Ether APIs accounts...")
+	if err := client.Unlock(*passwordFlag); err != nil {
+		log15.Crit("Failed to unlock accounts", "error", err)
 		return
 	}
-	api, err := client.Attach()
-	if err != nil {
-		log15.Crit("Failed to attach to node", "error", err)
-		return
-	}
-	// Wait for network connectivity and monitor synchronization
-	log15.Info("Searching for network peers...")
-	server := client.Stack().Server()
-	for len(server.Peers()) == 0 {
-		time.Sleep(100 * time.Millisecond)
-	}
-	go monitorSync(api)
-
-	// Retrieve the Ether APIs marketplace and payment contract
-	var eth *eth.Ethereum
-	err = client.Stack().Service(&eth)
-	if err != nil {
-		log15.Crit("Failed to fetch eth service", "error", err)
-		return
-	}
-	ethContract, err := contract.New(eth.ChainDb(), eth.EventMux(), eth.BlockChain(), eth.Miner().PendingState)
-	if err != nil {
-		log15.Crit("Failed to get contract", "error", err)
-		return
-	}
-
 	// Create the etherapis dashboard and run it
 	if *dashboardFlag != 0 {
 		log15.Info("Starting the EtherAPIs dashboard...", "url", fmt.Sprintf("http://localhost:%d", *dashboardFlag))
 		go func() {
-			http.Handle("/", dashboard.New(ethContract, eth, api, *dashboardAssetsFlag))
+			http.Handle("/", dashboard.New(client, *dashboardAssetsFlag))
 			if err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *dashboardFlag), nil); err != nil {
 				log15.Crit("Failed to start dashboard", "error", err)
 				os.Exit(-1)
 			}
 		}()
 	}
-	// Make sure we're at least semi recent on the chain before continuing
-	waitSync(*syncFlag, api)
-
-	if *signFlag != "" {
+	// Some leftovers from the gopher gala
+	/*if *signFlag != "" {
 		var message struct {
 			ServiceId int64
 			Nonce     uint64
@@ -155,55 +121,6 @@ func main() {
 
 	// Depending on the flags, execute different things
 	switch {
-	case *importFlag != "":
-		// Account import, parse the provided .json file and ensure it's proper
-		manager := eth.AccountManager()
-		account, err := manager.Import(*importFlag, "")
-		if err != nil {
-			log15.Crit("Failed to import specified account", "path", *importFlag, "error", err)
-			return
-		}
-		state, _ := eth.BlockChain().State()
-		log15.Info("Account successfully imported", "account", fmt.Sprintf("0x%x", account.Address), "balance", state.GetBalance(account.Address))
-		return
-	case *accountsFlag:
-		// Account listing requested, print all accounts and balances
-		accounts, err := eth.AccountManager().Accounts()
-		if err != nil || len(accounts) == 0 {
-			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "error", err)
-			return
-		}
-		state, _ := eth.BlockChain().State()
-		for i, account := range accounts {
-			balance := float64(new(big.Int).Div(state.GetBalance(account.Address), common.Finney).Int64()) / 1000
-			fmt.Printf("Account #%d: %f ether (http://testnet.etherscan.io/address/0x%x)\n", i, balance, account.Address)
-		}
-		return
-
-	case len(*serviceFlag) > 0:
-		// Check whether any of our accounts are subscribed to this particular service
-		accounts, err := eth.AccountManager().Accounts()
-		if err != nil || len(accounts) == 0 {
-			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "error", err)
-			return
-		}
-		serviceId := common.String2Big(*serviceFlag)
-		log15.Info("Checking subscription status", "service", fmt.Sprintf("%s", serviceId))
-		for i, account := range accounts {
-			// Check if a subscription exists
-			if !ethContract.Exists(account.Address, serviceId) {
-				fmt.Printf("Account #%d: [0x%x]: not subscribed.\n", i, account.Address)
-				continue
-			}
-			// Retrieve the current balance on the subscription
-			var ethers *big.Int
-			ethContract.Call(&ethers, "getSubscriptionValue", ethContract.SubscriptionId(account.Address, serviceId))
-			funds := float64(new(big.Int).Div(ethers, common.Finney).Int64()) / 1000
-
-			fmt.Printf("Account #%d: [0x%x]: subscribed, with %v ether(s) left.\n", i, account.Address, funds)
-		}
-		return
-
 	case len(*subToFlag) > 0:
 		// Subscription requested, make sure all the details are provided
 		accounts, err := eth.AccountManager().Accounts()
@@ -363,18 +280,17 @@ func main() {
 		for {
 			time.Sleep(time.Second)
 		}
-	}
+	}*/
 	// If the dashboard was opened, wait indefinitely
 	if *dashboardFlag > 0 {
-		// Wait indefinitely, for now at least
 		for {
-			time.Sleep(time.Second)
+			time.Sleep(5 * time.Second)
 		}
 	}
 	// Clean up for now
-	log15.Info("Terminating Ethereum client...")
-	if err := client.Stop(); err != nil {
-		log15.Crit("Failed to terminate Ethereum client", "error", err)
+	log15.Info("Disconnecting from Ethereum network...")
+	if err := client.Close(); err != nil {
+		log15.Crit("Failed to terminate Ether APIs client", "error", err)
 		return
 	}
 }
