@@ -23,22 +23,15 @@ var (
 	// General flags
 	datadirFlag         = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
 	loglevelFlag        = flag.Int("loglevel", 3, "Log level to use for displaying system events")
-	syncFlag            = flag.Duration("sync", 5*time.Minute, "Oldest allowed sync state before resync")
 	dashboardFlag       = flag.Int("dashboard", 8080, "Port number on which to run the dashboard (0 = disabled)")
 	dashboardAssetsFlag = flag.String("dashboard-assets", "", "Path to the dashboard static assets to use (empty = built in assets)")
 	passwordFlag        = flag.String("password", "", "Master password to use for account management")
-
-	// Management commands
-	subAccFlag  = flag.Int("subacc", 0, "Own account index with which to subscribe (list with --accounts)")
-	subToFlag   = flag.String("subto", "", "Id of the service to subscribe to")
-	subFundFlag = flag.Float64("subfund", 1, "Initial ether value to fund the subscription with")
 
 	// Proxy flags
 	proxyFlag  = flag.String("proxy", "", "Payment proxy configs ext-port:int-port:type (e.g. 80:8080:call,81:8081:data)")
 	chargeFlag = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
 
 	// Testing and admin flags
-	testFlag = flag.Bool("test", false, "Runs using the default test vectors for signing and verifying signatures")
 	signFlag = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
 )
 
@@ -121,106 +114,6 @@ func main() {
 
 	// Depending on the flags, execute different things
 	switch {
-	case len(*subToFlag) > 0:
-		// Subscription requested, make sure all the details are provided
-		accounts, err := eth.AccountManager().Accounts()
-		if err != nil || len(accounts) < *subAccFlag {
-			log15.Crit("Failed to retrieve account", "accounts", len(accounts), "requested", *subAccFlag, "error", err)
-			return
-		}
-		account := accounts[*subAccFlag]
-
-		// Check if a subscription exists
-		serviceId := common.String2Big(*subToFlag)
-		if ethContract.Exists(account.Address, serviceId) {
-			log15.Error("Account already subscribed", "index", *subAccFlag, "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId)
-			return
-		}
-		// Try to subscribe and wait until it completes
-		keystore := client.Keystore()
-		key, err := keystore.GetKey(account.Address, "")
-		if err != nil {
-			log15.Crit("Failed to unlock account", "account", fmt.Sprintf("0x%x", account.Address), "error", err)
-			return
-		}
-		amount := new(big.Int).Mul(big.NewInt(int64(1000000000**subFundFlag)), common.Shannon)
-
-		log15.Info("Subscribing to new payment channel", "account", fmt.Sprintf("0x%x", account.Address), "service", serviceId, "ethers", *subFundFlag)
-		pend := make(chan *contract.Subscription)
-		tx, err := ethContract.Subscribe(key.PrivateKey, serviceId, amount, big.NewInt(1), func(sub *contract.Subscription) { pend <- sub })
-		if err != nil {
-			log15.Crit("Failed to create subscription", "error", err)
-			return
-		}
-		if err := eth.TxPool().Add(tx); err != nil {
-			log15.Crit("Failed to execute subscription", "error", err)
-			return
-		}
-		log15.Info("Waiting for subscription to be finalized...", "tx", tx)
-		log15.Info("Successfully subscribed", "channel", fmt.Sprintf("%x", (<-pend).Id))
-		return
-	}
-
-	if *testFlag {
-		accounts, err := eth.AccountManager().Accounts()
-		if err != nil {
-			log15.Crit("Failed retrieving accounts", "err", err)
-		}
-		if len(accounts) < 2 {
-			log15.Crit("Test vectors requires at least 2 accounts", "len", len(accounts))
-			return
-		}
-
-		log15.Info("Attempting channel test vectors...")
-		from := accounts[0].Address
-		eth.AccountManager().Unlock(from, "")
-
-		serviceId := big.NewInt(0)
-		log15.Info("making channel name...", "from", from.Hex(), "service-id", serviceId, "id", ethContract.SubscriptionId(from, serviceId).Hex())
-
-		if !ethContract.Exists(from, serviceId) {
-			log15.Crit("No subscription found")
-			return
-		}
-		log15.Info("checking existence...", "exists", "OK")
-
-		amount := big.NewInt(1)
-
-		var hash []byte
-		ethContract.Call(&hash, "getHash", from, serviceId, 1, amount)
-		log15.Info("signing data", "service-id", serviceId, "amount", amount, "hash", common.ToHex(hash))
-
-		sig, err := eth.AccountManager().Sign(accounts[0], hash)
-		if err != nil {
-			log15.Crit("signing vailed", "err", err)
-			return
-		}
-		log15.Info("verifying signature", "sig", common.ToHex(sig))
-
-		if ethContract.ValidateSig(from, serviceId, 1, amount, sig) {
-			log15.Info("signature was valid and was verified by the EVM")
-		} else {
-			log15.Crit("signature was invalid")
-			return
-		}
-
-		log15.Info("verifying payment", "sig", common.ToHex(sig))
-		if valid, _ := ethContract.Verify(from, serviceId, 1, amount, sig); valid {
-			log15.Info("payment was valid and was verified by the EVM")
-		} else {
-			log15.Crit("payment was invalid")
-			return
-		}
-
-		log15.Info("verifying invalid payment", "nonce", 2)
-		if valid, _ := ethContract.Verify(from, serviceId, 2, amount, sig); valid {
-			log15.Crit("payment was valid")
-			return
-		} else {
-			log15.Info("payment was invalid")
-		}
-	}
-
 	// If we're running a proxy, start processing external requests
 	if *proxyFlag != "" {
 		// Subscription requested, make sure all the details are provided
