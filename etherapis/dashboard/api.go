@@ -40,6 +40,7 @@ func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth
 	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
 	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
+	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
 
 	return router
@@ -48,13 +49,31 @@ func newAPIServeMux(base string, contract *channels.Subscriptions, ethereum *eth
 // Services retrieves the given address' services.
 func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	addresses, exist := vars["addresses"]
-	if !exist {
-		log15.Error("Failed to retrieve services", "error", "no address specified")
-		http.Error(w, "no address specified", http.StatusInternalServerError)
+	// if there's an address present on the URL return the services
+	// owned by this account.
+	if addresses, exist := vars["addresses"]; exist {
+		a.ownedServices(addresses, w, r)
 		return
 	}
 
+	services, err := a.contract.AllServices()
+	if err != nil {
+		log15.Error("Failed to retrieve services", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out, err := json.Marshal(services)
+	if err != nil {
+		log15.Error("Failed to retrieve services", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(out)
+}
+
+func (a *api) ownedServices(addresses string, w http.ResponseWriter, r *http.Request) {
 	var services []channels.Service
 	// addresses is a comma separated list of addresseses
 	for _, addr := range strings.Split(addresses, ",") {
