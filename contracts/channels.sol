@@ -12,20 +12,30 @@ contract ServiceProviders {
 
 		Terms terms;
 
+		bool enabled;
 		bool exist;
 	}
 	Service[] services;
 
-	mapping(address => int[]) public userServices;
-	function userServicesLength(address addr) constant returns(uint) {
-		return userServices[addr].length;
-	}
-
 	event NewService(string indexed name, address indexed owner, uint serviceId);
+	event UpdateService(uint indexed serviceId);
 
+	// services per user.
+	mapping(address => uint[]) public userServices;
+	// get the length per user.
+	function userServicesLength(address addr) constant returns(uint) { return userServices[addr].length; }
+	// get the total length of the services.
+	function servicesLength() constant returns(uint)                 { return services.length; }
+	// get a service and return a tuple.
+	function getService(uint serviceId) constant returns(string name, address owner, string endpoint, uint price, uint cancellationTime, bool enabled) {
+		Service service = services[serviceId];
+		return (service.name, service.owner, service.endpoint, service.terms.price, service.terms.cancellationTime, service.enabled);
+	}
+	// Add a new service.
 	function addService(string name, string endpoint, uint price, uint cancellationTime) {
 		Service service = services[services.length++];
 		service.exist = true;
+		service.enabled = true;
 		service.id = services.length-1;
 		service.owner = msg.sender;
 		service.name = name;
@@ -34,18 +44,8 @@ contract ServiceProviders {
 		service.terms.cancellationTime = cancellationTime;
 
 		userServices[msg.sender].push(service.id);
-		services.push(service);
 
 		NewService(name, msg.sender, service.id);
-	}
-
-	function getService(uint serviceId) constant returns(string name, address owner, string endpoint, uint price, uint cancellationTime) {
-		Service service = services[serviceId];
-		return (service.name, service.owner, service.endpoint, service.terms.price, service.terms.cancellationTime);
-	}
-
-	function serviceLength() constant returns(uint) {
-		return services.length;
 	}
 }
 
