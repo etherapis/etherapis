@@ -18,7 +18,7 @@ var Accounts = React.createClass({
               this.props.accounts.map(function(account) {
                 return (
                   <div key={account} className="col-lg-6">
-                    <Account explorer={this.props.explorer} account={account}/>
+                    <Account apiurl={this.props.apiurl} explorer={this.props.explorer} account={account} active={this.props.active} switch={this.props.accounts.length > 1 ? this.props.switch : null} refresh={this.props.refresh}/>
                   </div>
                 )
               }.bind(this))
@@ -29,8 +29,8 @@ var Accounts = React.createClass({
           <div className="col-lg-12">
             <h3>Add account</h3>
           </div>
-          <div className="col-lg-6"><AccountCreator/></div>
-          <div className="col-lg-6"><AccountImporter/></div>
+          <div className="col-lg-6"><AccountCreator apiurl={this.props.apiurl} refresh={this.props.refresh}/></div>
+          <div className="col-lg-6"><AccountImporter apiurl={this.props.apiurl} refresh={this.props.refresh}/></div>
         </div>
       </div>
     );
@@ -47,6 +47,9 @@ var Account = React.createClass({
       action: "",
     };
   },
+  // activate switches the dashboard to use this particular account.
+  activate: function() { this.props.switch(this.props.account); },
+
   // abortAction restores the account UI into it's default no-action state.
   abortAction: function() { this.setState({action: ""}); },
 
@@ -61,10 +64,10 @@ var Account = React.createClass({
   // render flattens the account stats into a UI panel.
   render: function() {
     return (
-      <div className="panel panel-default">
+      <div className={this.props.account == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
         <div className="panel-heading">
-          <img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.account, size: 8, scale: 2.5}).toDataURL()}/>
-          <span style={{fontFamily: "monospace"}}>{this.props.account}</span>
+          <img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.account, size: 8, scale: 2}).toDataURL()}/>
+          <span style={{fontFamily: "monospace"}}>{this.props.account}</span>{this.props.account == this.props.active && this.props.switch != null ? " – Active" : null}
           <a href={this.props.explorer + this.props.account} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
         </div>
         <div className="panel-body">
@@ -75,14 +78,16 @@ var Account = React.createClass({
             Subscribed services:
           </div>
           <div className="clearfix">
+            <hr style={{margin: "10px 0"}}/>
+            { this.props.account == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
             <div className="pull-right">
               <a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
               &nbsp;
               <a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-user-times"></i> Delete</a>
             </div>
           </div>
-          <ExportConfirm account={this.props.account} hide={this.state.action != "export"} abort={this.abortAction}/>
-          <DeleteConfirm account={this.props.account} hide={this.state.action != "delete"} abort={this.abortAction}/>
+          <ExportConfirm apiurl={this.props.apiurl} account={this.props.account} hide={this.state.action != "export"} abort={this.abortAction}/>
+          <DeleteConfirm apiurl={this.props.apiurl} account={this.props.account} hide={this.state.action != "delete"} abort={this.abortAction} active={this.props.active} refresh={this.props.refresh}/>
         </div>
       </div>
     );
@@ -95,8 +100,9 @@ var ExportConfirm = React.createClass({
   // getInitialState sets the zero values of the component.
   getInitialState: function() {
     return {
-      input:   "",
-      confirm: "",
+      input:    "",
+      confirm:  "",
+      progress: false,
     };
   },
   // updateInput and updateConfirm pulls in the users modifications from the input
@@ -107,7 +113,13 @@ var ExportConfirm = React.createClass({
   // exportAccount executes the actual account export, sending back the account
   // identifier along with the password to encrypt it with.
   exportAccount: function() {
-    alert("Exported " + this.props.account + " with '" + this.state.input + "'")
+    this.setState({progress: true});
+
+    // We have no idea how much time it takes, display for 2 secs, ten hide :P
+    setTimeout(function() {
+      this.setState(this.getInitialState());
+      this.props.abort();
+    }.bind(this), 2000);
   },
   // render flattens the account stats into a UI panel.
   render: function() {
@@ -129,7 +141,9 @@ var ExportConfirm = React.createClass({
         </div>
         <div style={{textAlign: "center"}}>
           <p><strong>Do not forget this password, there is no way to recover it!</strong></p>
-          <a href="#" className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm ? "disabled" : "")} onClick={this.exportAccount}>Export this account</a>
+          <a href={this.props.apiurl + "/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
+            { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Export this account
+          </a>
           &nbsp;&nbsp;&nbsp;
           <a href="#" className="btn btn-info" onClick={this.props.abort}>Do not export account</a>
         </div>
@@ -141,10 +155,29 @@ var ExportConfirm = React.createClass({
 // DeleteConfirm displays a warning message and requires an addtional confirmation
 // from the user to ensure that no accidental account deletion happens.
 var DeleteConfirm = React.createClass({
+  // getInitialState sets the zero values of the component.
+  getInitialState: function() {
+    return {
+      progress: false,
+      failure:  null,
+    };
+  },
   // deleteAccount executes the actual account deletion, sending back the account
   // identifier to the server for irreversible removal.
   deleteAccount: function() {
-    alert("Deleted " + this.props.account)
+    // Show the spinner until something happens
+    this.setState({progress: true});
+
+    // Execute the account deletion request
+    $.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.account, cache: false,
+      success: function() {
+        this.setState({progress: false, failure: null});
+        this.props.refresh(this.props.active);
+      }.bind(this),
+      error: function(xhr, status, err) {
+        this.setState({progress: false, failure: xhr.responseText});
+      }.bind(this),
+    });
   },
   // render flattens the account stats into a UI panel.
   render: function() {
@@ -161,10 +194,13 @@ var DeleteConfirm = React.createClass({
           Removing a non exported account will forever forfeit access to it and any funds contained within.
         </p>
         <div style={{textAlign: "center"}}>
-          <a href="#" className="btn btn-danger" onClick={this.deleteAccount}><strong>Irreversibly</strong> delete account!</a>
+          <a href="#" className={"btn btn-danger " + (this.state.progress ? "disabled" : "")} onClick={this.deleteAccount}>
+            { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} <strong>Irreversibly</strong> delete account!
+          </a>
           &nbsp;&nbsp;&nbsp;
           <a href="#" className="btn btn-success" onClick={this.props.abort}>I have changed my mind!</a>
         </div>
+        { this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to delete account: {this.state.failure}</p></div> : null }
       </div>
     )
   }
@@ -172,10 +208,32 @@ var DeleteConfirm = React.createClass({
 
 // AccountCreator is a UI component for generating a brand new pristing account.
 var AccountCreator = React.createClass({
+  // getInitialState sets the zero values of the component.
+  getInitialState: function() {
+    return {
+      progress: false,
+      failure:  null,
+    };
+  },
   // createAccount executes the actual account creation, sending an account
   // generation request to the backend server.
   createAccount: function() {
-    alert("Created new account")
+    // Show the spinner until something happens
+    this.setState({progress: true});
+
+    // Do a simple account creation post request
+    var form = new FormData();
+    form.append("action", "create");
+
+    $.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+      success: function(data) {
+        this.setState({progress: false, failure: null});
+        this.props.refresh(data);
+      }.bind(this),
+      error: function(xhr, status, err) {
+        this.setState({progress: false, failure: xhr.responseText});
+      }.bind(this),
+    });
   },
   // render flattens the account stats into a UI panel.
   render: function() {
@@ -194,8 +252,11 @@ var AccountCreator = React.createClass({
             amount of Ether. You can either transfer Ether from another account or obtain it via an exchange.
           </p>
           <div style={{textAlign: "center"}}>
-            <a href="#" className="btn btn-success" onClick={this.createAccount}>Create account</a>
+            <a href="#" className={"btn btn-success " + (this.state.progress ? "disabled" : "")} onClick={this.createAccount}>
+              { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Create account
+            </a>
           </div>
+          { this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to create account: {this.state.failure}</p></div> : null }
         </div>
       </div>
     )
@@ -207,20 +268,47 @@ var AccountImporter = React.createClass({
   // getInitialState sets the zero values of the component.
   getInitialState: function() {
     return {
-      file: "",
-      pass: "",
+      filename: "",
+      fileblob: null,
+      password: "",
+      progress: false,
+      failure:  null,
     };
   },
   // updateFile sets the file to be uploaded for importing.
-  updateFile: function(event) { this.setState({file: event.target.value}); },
-
+  updateFile: function(event) {
+    this.setState({
+      filename: event.target.value,
+      fileblob: event.target.files[0],
+    });
+  },
   // updatePassword pulls in the users modifications from the password box.
-  updatePassword: function(event) { this.setState({pass: event.target.value}); },
+  updatePassword: function(event) { this.setState({password: event.target.value}); },
 
   // importAccount executes the actual account import, sending back the account
   // file and the password to decrypt it with.
-  importAccount: function() {
-    alert("Imported " + this.state.file + " with '" + this.state.pass + "'")
+  importAccount: function(event) {
+    // Don't refresh the page, we don't want that
+    event.preventDefault();
+
+    // Show the spinner until something happens
+    this.setState({progress: true});
+
+    // Upload the form manually via AJAX queries
+    var form = new FormData();
+    form.append("action", "import");
+    form.append("account", this.state.fileblob);
+    form.append("password", this.state.password);
+
+    $.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+      success: function(data) {
+        this.setState(this.getInitialState());
+        this.props.refresh(data);
+      }.bind(this),
+      error: function(xhr, status, err) {
+        this.setState({progress: false, failure: xhr.responseText});
+      }.bind(this),
+    });
   },
   // render flattens the account stats into a UI panel.
   render: function() {
@@ -231,24 +319,29 @@ var AccountImporter = React.createClass({
         </div>
         <div className="panel-body">
           <p>Please select a previously exported account to import:</p>
-          <div className="form-group">
-            <input type="password" className="form-control pull-right" style={{width: "49%"}} placeholder="Passphrase" onChange={this.updatePassword}/>
-            <div className="input-group" style={{width: "49%"}}>
-              <span className="input-group-btn">
-                <span className="btn btn-default btn-file">
-                  Browse&hellip; <input type="file" onChange={this.updateFile}/>
+          <form>
+            <div className="form-group">
+              <input type="password" className="form-control pull-right" style={{width: "49%"}} placeholder="Passphrase" value={this.state.password} onChange={this.updatePassword}/>
+              <div className="input-group" style={{width: "49%"}}>
+                <span className="input-group-btn">
+                  <span className="btn btn-default btn-file">
+                    Browse&hellip; <input type="file" onChange={this.updateFile}/>
+                  </span>
                 </span>
-              </span>
-              <input type="text" className="form-control" value={this.state.file} disabled/>
+                <input type="text" className="form-control" value={this.state.filename} disabled/>
+              </div>
             </div>
-          </div>
-          <p>
-            Importing will decrypt the uploaded account key with the provided password, and will reencrypt it using
-            its own master password before saving it into its keystore.
-          </p>
-          <div style={{textAlign: "center"}}>
-            <a href="#" className={"btn btn-success " + (this.state.file == "" ? "disabled" : "")} onClick={this.importAccount}>Import account</a>
-          </div>
+            <p>
+              Importing will decrypt the uploaded account key with the provided password, and will reencrypt it using
+              its own master password before saving it into its keystore.
+            </p>
+            <div style={{textAlign: "center"}}>
+              <button type="submit" className="btn btn-success" disabled={this.state.filename == "" || this.state.progress} onClick={this.importAccount}>
+                { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Import account
+              </button>
+            </div>
+            { this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to import account: {this.state.failure}</p></div> : null }
+          </form>
         </div>
       </div>
     )

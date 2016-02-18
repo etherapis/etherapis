@@ -3,14 +3,16 @@
 package dashboard
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
+	"github.com/etherapis/etherapis/etherapis"
 	"github.com/etherapis/etherapis/etherapis/contract"
-	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/gorilla/mux"
 	"gopkg.in/inconshreveable/log15.v2"
 )
@@ -18,24 +20,22 @@ import (
 // api is a wrapper around the etherapis components, exposing various parts of
 // each submodule.
 type api struct {
-	ethereum *eth.Ethereum
-	gethAPI  *geth.API
-	contract *contract.Contract
+	eapis *etherapis.EtherAPIs
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
 // and returns the HTTP route multipelxer to embed in the main handler.
-func newAPIServeMux(base string, contract *contract.Contract, ethereum *eth.Ethereum, gethAPI *geth.API) *mux.Router {
+func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
-		ethereum: ethereum,
-		gethAPI:  gethAPI,
-		contract: contract,
+		eapis: eapis,
 	}
 	// Register all the API handler endpoints
 	router := mux.NewRouter()
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
+	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.AccountDeletion)
+	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/{password:.+}", handler.AccountExport)
 	router.HandleFunc(base+"ethereum/peers", handler.PeerInfos)
 	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
 	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
@@ -60,7 +60,7 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 	if addresses, exist := vars["addresses"]; exist {
 		// addresses is a comma separated list of addresseses
 		for _, addr := range strings.Split(addresses, ",") {
-			srvs, err := a.contract.Services(common.HexToAddress(addr))
+			srvs, err := a.eapis.Contract().Services(common.HexToAddress(addr))
 			if err != nil {
 				log15.Error("Failed to retrieve services", "error", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -70,7 +70,7 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Get all services
-		services, err = a.contract.AllServices()
+		services, err = a.eapis.Contract().AllServices()
 		if err != nil {
 			log15.Error("Failed to retrieve services", "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -98,7 +98,7 @@ func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	services, err := a.contract.Subscriptions(common.HexToAddress(addr))
+	services, err := a.eapis.Contract().Subscriptions(common.HexToAddress(addr))
 	if err != nil {
 		log15.Error("Failed to retrieve subscriptions", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -116,27 +116,111 @@ func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
 }
 
 // Accounts retrieves the Ethereum accounts currently configured to be used by the
-// payment proxies and/or the marketplace and subscriptions.
+// payment proxies and/or the marketplace and subscriptions. In case of a HTTP POST,
+// a new account is imported using the uploaded key file and access password.
 func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
-	accounts, err := a.ethereum.AccountManager().Accounts()
-	if err != nil {
-		log15.Error("Failed to retrieve accounts", "error", err)
+	switch {
+	case r.Method == "GET":
+		// List the available accounts
+		accounts, err := a.eapis.Accounts()
+		if err != nil {
+			log15.Error("Failed to retrieve accounts", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out, err := json.Marshal(accounts)
+		if err != nil {
+			log15.Error("Failed to marshal account list", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(out)
+
+	case r.Method == "POST" && r.FormValue("action") == "create":
+		// Create a brand new random account
+		address, err := a.eapis.CreateAccount()
+		if err != nil {
+			log15.Error("Failed to generate account", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("0x%x", address)))
+
+	case r.Method == "POST" && r.FormValue("action") == "import":
+		// Import a new account specified by a form
+		password := r.FormValue("password")
+		account, _, err := r.FormFile("account")
+		if err != nil {
+			log15.Error("Failed to retrieve account", "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		key, err := ioutil.ReadAll(account)
+		if err != nil {
+			log15.Error("Failed to read account", "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		address, err := a.eapis.ImportAccount(key, password)
+		if err != nil {
+			log15.Error("Failed to import account", "error", err)
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("0x%x", address)))
+
+	default:
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
+	}
+}
+
+// AccountDeletion handles the request to delete an existing account.
+func (a *api) AccountDeletion(w http.ResponseWriter, r *http.Request) {
+	// Only reply for deletion requests
+	if r.Method != "DELETE" {
+		log15.Error("Invalid method on account deletion endpoint", "method", r.Method)
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
+		return
+	}
+	// Delete the account and return an error if something goes wrong
+	params := mux.Vars(r)
+
+	if err := a.eapis.DeleteAccount(common.HexToAddress(params["address"])); err != nil {
+		log15.Error("Failed to delete account", "address", params["address"], "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out, err := json.Marshal(accounts)
+}
+
+// AccountExport handles the request to export an account with a particular
+// password set.
+func (a *api) AccountExport(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	// Export the key into a json key file and return and error if something goes wrong
+	key, err := a.eapis.ExportAccount(common.HexToAddress(params["address"]), params["password"])
 	if err != nil {
-		log15.Error("Failed to marshal account list", "error", err)
+		log15.Error("Failed to export account", "address", params["address"], "error", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Pretty print the key json since the exporter sucks :P
+	pretty := new(bytes.Buffer)
+	if err := json.Indent(pretty, key, "", "  "); err != nil {
+		log15.Error("Failed to pretty print key", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(out)
+	// Set the correct header to ensure download (i.e. no display) and dump the contents
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
+	w.Write(pretty.Bytes())
 }
 
 // PeerInfos retrieves the currently connected peers and returns them in their
 // raw Ethereum API reply form.
 func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.gethAPI.Request("admin_peers", nil)
+	reply, err := a.eapis.CallRPC("admin_peers", nil)
 	if err != nil {
 		log15.Error("Failed to retrieve connected peers", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -148,7 +232,7 @@ func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
 // SyncStatus retrieves the current sync status and returns it in its raw
 // Ethereum API reply form.
 func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.gethAPI.Request("eth_syncing", nil)
+	reply, err := a.eapis.CallRPC("eth_syncing", nil)
 	if err != nil {
 		log15.Error("Failed to retrieve sync status", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -160,7 +244,7 @@ func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
 // HeadBlock retrieves the current head block and returns it in its raw
 // Ethereum API reply form.
 func (a *api) HeadBlock(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.gethAPI.Request("eth_getBlockByNumber", []interface{}{"latest", false})
+	reply, err := a.eapis.CallRPC("eth_getBlockByNumber", []interface{}{"latest", false})
 	if err != nil {
 		log15.Error("Failed to retrieve head block", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

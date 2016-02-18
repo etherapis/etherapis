@@ -11,13 +11,16 @@ var Dashboard = React.createClass({
       apiOnline:  true,
       apiFailure: "",
       needSync:   false,
-      accounts:    null,
+      accounts:   [],
+      account:    "",
+
+      footer: "52px",
     };
   },
   // componentDidMount is invoked when the status component finishes loading. It
   // loads up the Ethereum account used by the Ether APIs server.
   componentDidMount: function() {
-    this.refreshAccount();
+    this.refreshAccounts();
   },
 
   loadIndex:      function() { this.setState({section: "index"}); },
@@ -26,12 +29,25 @@ var Dashboard = React.createClass({
   loadMarket:     function() { this.setState({section: "market"}); },
   loadAccount:    function() { this.setState({section: "account"}); },
 
-  // refreshAccount retrieves the current account configured, and if successful,
+  // refreshAccounts retrieves the current accounts configured, and if successful,
   // also loads up any associated data.
-  refreshAccount: function() {
+  refreshAccounts: function(selected) {
     this.apiCall(this.props.apiurl + "/accounts", function(accounts) {
-      this.setState({accounts: accounts.sort()});
+      var primary = null;
+      for (var i = 0; i < accounts.length; i++) {
+        if (accounts[i] == selected) {
+          primary = selected;
+        }
+      }
+      if (primary == null) {
+        primary = accounts[0];
+      }
+      this.setState({accounts: accounts.sort(), account: primary});
     }.bind(this));
+  },
+  // switchAccount switches out the currently active account to the one specified.
+  switchAccount: function(account) {
+    this.setState({account: account});
   },
 
   apiCall: function(url, success) {
@@ -53,7 +69,7 @@ var Dashboard = React.createClass({
   },
   render: function() {
     return (
-      <div>
+      <div style={{height: "100%"}}>
         <nav className="navbar navbar-fixed-top">
           <div className="container">
             <div className="navbar-header">
@@ -70,17 +86,18 @@ var Dashboard = React.createClass({
             </div>
           </div>
         </nav>
-        <div className="container">
+        <div className="container" style={{minHeight: "100%", margin: "0 auto -" + this.state.footer}}>
           <BackendError hide={this.state.apiOnline}/>
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Accounts hide={this.state.section != "account"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts}/>
+          <Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount} refresh={this.refreshAccounts}/>
           <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>
+          <div style={{height: this.state.footer}}></div>
         </div>
-        <TestnetFooter hide={false}/>
+        <TestnetFooter hide={false} height={this.state.footer}/>
       </div>
     );
   }
@@ -143,8 +160,8 @@ var TestnetFooter = React.createClass({
       return null
     }
     return (
-      <div style={{position: "absolute", bottom: 0, width: "100%", height: "52px"}}>
-          <div className="alert alert-info   text-center" role="alert" style={{marginBottom: 0}}>
+      <div style={{width: "100%", height: this.props.height}}>
+          <div className="alert alert-info text-center" role="alert" style={{marginBottom: 0}}>
             <i className="fa fa-info-circle"></i> This instance is currently configured to use the <strong>test network</strong>. Consider everything here a consequence free playground.
           </div>
       </div>
