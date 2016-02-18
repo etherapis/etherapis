@@ -13,6 +13,8 @@ var Dashboard = React.createClass({
       needSync:   false,
       accounts:   [],
       account:    "",
+
+      footer: "52px",
     };
   },
   // componentDidMount is invoked when the status component finishes loading. It
@@ -67,7 +69,7 @@ var Dashboard = React.createClass({
   },
   render: function() {
     return (
-      <div>
+      <div style={{height: "100%"}}>
         <nav className="navbar navbar-fixed-top">
           <div className="container">
             <div className="navbar-header">
@@ -84,7 +86,7 @@ var Dashboard = React.createClass({
             </div>
           </div>
         </nav>
-        <div className="container">
+        <div className="container" style={{minHeight: "100%", margin: "0 auto -" + this.state.footer}}>
           <BackendError hide={this.state.apiOnline}/>
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
@@ -93,8 +95,9 @@ var Dashboard = React.createClass({
           <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>
+          <div style={{height: this.state.footer}}></div>
         </div>
-        <TestnetFooter hide={false}/>
+        <TestnetFooter hide={false} height={this.state.footer}/>
       </div>
     );
   }
@@ -157,8 +160,8 @@ var TestnetFooter = React.createClass({
       return null
     }
     return (
-      <div style={{position: "absolute", bottom: 0, width: "100%", height: "52px"}}>
-          <div className="alert alert-info   text-center" role="alert" style={{marginBottom: 0}}>
+      <div style={{width: "100%", height: this.props.height}}>
+          <div className="alert alert-info text-center" role="alert" style={{marginBottom: 0}}>
             <i className="fa fa-info-circle"></i> This instance is currently configured to use the <strong>test network</strong>. Consider everything here a consequence free playground.
           </div>
       </div>
