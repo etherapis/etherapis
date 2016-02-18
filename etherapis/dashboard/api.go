@@ -34,7 +34,7 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router := mux.NewRouter()
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
-	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.AccountDeletion)
+	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/{password:.+}", handler.AccountExport)
 	router.HandleFunc(base+"ethereum/peers", handler.PeerInfos)
 	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
@@ -174,20 +174,31 @@ func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AccountDeletion handles the request to delete an existing account.
-func (a *api) AccountDeletion(w http.ResponseWriter, r *http.Request) {
-	// Only reply for deletion requests
-	if r.Method != "DELETE" {
-		log15.Error("Invalid method on account deletion endpoint", "method", r.Method)
-		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
-		return
-	}
-	// Delete the account and return an error if something goes wrong
+// Account is the RESTfull endpoint for account management.
+func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	if err := a.eapis.DeleteAccount(common.HexToAddress(params["address"])); err != nil {
-		log15.Error("Failed to delete account", "address", params["address"], "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Only reply for deletion requests and get request
+	switch r.Method {
+	case "DELETE":
+		// Delete the account and return an error if something goes wrong
+		if err := a.eapis.DeleteAccount(common.HexToAddress(params["address"])); err != nil {
+			log15.Error("Failed to delete account", "address", params["address"], "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	case "GET":
+		out, err := json.Marshal(a.eapis.GetAccount(common.HexToAddress(params["address"])))
+		if err != nil {
+			log15.Error("Failed to marshal account", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(out)
+	default:
+		log15.Error("Invalid method on account endpoint", "method", r.Method)
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
 		return
 	}
 }
