@@ -141,7 +141,7 @@ var ExportConfirm = React.createClass({
         </div>
         <div style={{textAlign: "center"}}>
           <p><strong>Do not forget this password, there is no way to recover it!</strong></p>
-          <a href={this.props.apiurl + "/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm ? "disabled" : "")} onClick={this.exportAccount}>
+          <a href={this.props.apiurl + "/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
             { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Export this account
           </a>
           &nbsp;&nbsp;&nbsp;
@@ -194,7 +194,7 @@ var DeleteConfirm = React.createClass({
           Removing a non exported account will forever forfeit access to it and any funds contained within.
         </p>
         <div style={{textAlign: "center"}}>
-          <a href="#" className="btn btn-danger" onClick={this.deleteAccount}>
+          <a href="#" className={"btn btn-danger " + (this.state.progress ? "disabled" : "")} onClick={this.deleteAccount}>
             { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} <strong>Irreversibly</strong> delete account!
           </a>
           &nbsp;&nbsp;&nbsp;
@@ -252,7 +252,7 @@ var AccountCreator = React.createClass({
             amount of Ether. You can either transfer Ether from another account or obtain it via an exchange.
           </p>
           <div style={{textAlign: "center"}}>
-            <a href="#" className="btn btn-success" onClick={this.createAccount}>
+            <a href="#" className={"btn btn-success " + (this.state.progress ? "disabled" : "")} onClick={this.createAccount}>
               { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Create account
             </a>
           </div>
@@ -336,7 +336,7 @@ var AccountImporter = React.createClass({
               its own master password before saving it into its keystore.
             </p>
             <div style={{textAlign: "center"}}>
-              <button type="submit" className="btn btn-success" disabled={this.state.filename == ""} onClick={this.importAccount}>
+              <button type="submit" className="btn btn-success" disabled={this.state.filename == "" || this.state.progress} onClick={this.importAccount}>
                 { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Import account
               </button>
             </div>
