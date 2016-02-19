@@ -91,7 +91,7 @@ var Dashboard = React.createClass({
           <NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
 
           <Tutorial hide={this.state.section != "index"}/>
-          <Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount} refresh={this.refreshAccounts}/>
+          <Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl} ajax={this.apiCall} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount} refresh={this.refreshAccounts}/>
           <Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
           <Subscriber hide={this.state.section != "subscriber"}/>
           <Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>

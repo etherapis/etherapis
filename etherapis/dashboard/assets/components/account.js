@@ -18,7 +18,7 @@ var Accounts = React.createClass({
               this.props.accounts.map(function(account) {
                 return (
                   <div key={account} className="col-lg-6">
-                    <Account apiurl={this.props.apiurl} explorer={this.props.explorer} account={account} active={this.props.active} switch={this.props.accounts.length > 1 ? this.props.switch : null} refresh={this.props.refresh}/>
+                    <Account apiurl={this.props.apiurl} explorer={this.props.explorer} account={account} active={this.props.active} switch={this.props.accounts.length > 1 ? this.props.switch : null} ajax={this.props.ajax} refresh={this.props.refresh}/>
                   </div>
                 )
               }.bind(this))
@@ -45,6 +45,9 @@ var Account = React.createClass({
   getInitialState: function() {
     return {
       action: "",
+      services: [],
+      subscriptions: [],
+      account: {},
     };
   },
   // activate switches the dashboard to use this particular account.
@@ -61,6 +64,24 @@ var Account = React.createClass({
   // confirmation buttons.
   confirmDelete: function() { this.setState({action: "delete"}); },
 
+  // componentDidMount is called when this view is loaded and presented.
+  componentDidMount: function() { this.refreshDetails(); },
+
+  // refreshDetails will set the state of the services and subscriptions
+  refreshDetails: function() {
+	  this.props.ajax(this.props.apiurl + "/services/" + this.props.account, function(services) {
+		  this.setState({services: services});
+	  }.bind(this));
+
+	  this.props.ajax(this.props.apiurl + "/subscriptions/" + this.props.account, function(subscriptions) {
+		  this.setState({subscriptions: subscriptions});
+	  }.bind(this));
+
+	  this.props.ajax(this.props.apiurl + "/accounts/" + this.props.account, function(account) {
+		  this.setState({account: account});
+	  }.bind(this));
+  },
+
   // render flattens the account stats into a UI panel.
   render: function() {
     return (
@@ -71,12 +92,18 @@ var Account = React.createClass({
           <a href={this.props.explorer + this.props.account} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
         </div>
         <div className="panel-body">
-          <div>
-            Provided services:
-          </div>
-          <div>
-            Subscribed services:
-          </div>
+	  <table className="table">
+	  	<tr>
+			<th>Balance</th>
+			<th>Services</th>
+			<th>Subscriptions</th>
+		</tr>
+		<tr>
+			<td>{this.state.account.balance}</td>
+			<td>{this.state.services.length}</td>
+			<td>{this.state.subscriptions.length}</td>
+		</tr>
+	  </table>
           <div className="clearfix">
             <hr style={{margin: "10px 0"}}/>
             { this.props.account == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
@@ -133,7 +160,7 @@ var ExportConfirm = React.createClass({
         <p>
           Please note, an exported account is an <strong>extremely sensitive</strong> piece of information.
           Although it will be encrypted with the passphrase set below, it contains access to all funds
-          stored within the account. Do not share it, do not lose it. Be cautions!
+          stored within the account. Do not share it, do not lose it. Be cautious!
         </p>
         <div className="form-group">
           <input type="password" className="form-control pull-right" style={{width: "49%"}} placeholder="Confirm passphrase" onChange={this.updateConfirm}/>
@@ -141,7 +168,7 @@ var ExportConfirm = React.createClass({
         </div>
         <div style={{textAlign: "center"}}>
           <p><strong>Do not forget this password, there is no way to recover it!</strong></p>
-          <a href={this.props.apiurl + "/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
+          <a href={this.props.apiurl + "/accounts/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
             { this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Export this account
           </a>
           &nbsp;&nbsp;&nbsp;
@@ -225,7 +252,7 @@ var AccountCreator = React.createClass({
     var form = new FormData();
     form.append("action", "create");
 
-    $.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+    $.ajax({type: "POST", url: this.props.apiurl + "/accounts/", cache: false, data: form, processData: false, contentType: false,
       success: function(data) {
         this.setState({progress: false, failure: null});
         this.props.refresh(data);

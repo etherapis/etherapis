@@ -44,8 +44,8 @@ type Contract struct {
 	channelMu sync.RWMutex
 
 	// call key is a temporary key used to do calls
-	callKey *ecdsa.PrivateKey
-
+	callKey   *ecdsa.PrivateKey
+	callMu    sync.Mutex
 	callState func() *state.StateDB
 }
 
@@ -200,6 +200,9 @@ func (c *Contract) SubscriptionId(from common.Address, serviceId *big.Int) commo
 
 // exec is the executer function callback for the abi `Call` method.
 func (c *Contract) exec(input []byte) []byte {
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
+
 	ret, err := runtime.Call(contractAddress, input, &runtime.Config{
 		GetHashFn: core.GetHashFn(c.blockchain.CurrentBlock().ParentHash(), c.blockchain),
 		State:     c.callState(),
