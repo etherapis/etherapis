@@ -50,10 +50,10 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 // no list of address is given.
 func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 	var (
-		services []contract.Service
-		err      error
-		vars     = mux.Vars(r)
+		err  error
+		vars = mux.Vars(r)
 	)
+	services := make([]contract.Service, 0) // Initialize to serialize into [], not null
 
 	// if there's an address present on the URL return the services
 	// owned by this account.
@@ -84,7 +84,6 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	w.Write(out)
 }
 
