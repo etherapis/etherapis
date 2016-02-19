@@ -47,7 +47,9 @@ var Account = React.createClass({
 			action: "",
 			services: [],
 			subscriptions: [],
-			account: {},
+			account: {
+				balance: "",
+			},
 		};
 	},
 	// activate switches the dashboard to use this particular account.
@@ -99,7 +101,7 @@ var Account = React.createClass({
 								<th>Subscriptions</th>
 						</tr></thead>
 						<tbody><tr>
-							<td>{this.state.account.balance}</td>
+							<td>{formatBalance(this.state.account.balance)}</td>
 							<td>{this.state.services.length}</td>
 							<td>{this.state.subscriptions.length}</td>
 						</tr></tbody>
