@@ -7,12 +7,12 @@ var Dashboard = React.createClass({
 	// getInitialState sets the zero values of the component.
 	getInitialState: function() {
 		return {
-			section:		"index",
-			apiOnline:	true,
-			apiFailure: "",
-			needSync:	 false,
-			accounts:	 [],
-			account:		"",
+			section:  "index",
+			accounts: [],
+			account:  "",
+
+			server: null,       // State data injected by the Ether APIs backend
+			alive:  Date.now(), // Timestamp (ms) of the last state update
 
 			footer: "52px",
 		};
@@ -20,6 +20,25 @@ var Dashboard = React.createClass({
 	// componentDidMount is invoked when the status component finishes loading. It
 	// loads up the Ethereum account used by the Ether APIs server.
 	componentDidMount: function() {
+		// Connect to the backend to receive state updates
+		var server = new EtherAPIs("ws://localhost:8080/api/v1/", function(state) {
+			this.setState({server: state, alive: Date.now()});
+		}.bind(this));
+
+		// Start a heartbeat mechanism to notice backend failures
+		setInterval(function() {
+			if (Date.now() - this.state.alive > 3000) {
+				// Drop any previous state to clear the UI and try to reconnect
+				if (this.state.server != null) {
+					this.setState({server: null});
+				}
+				server.reconnect();
+
+				// Bumt the timer so we're not reconnecting like crazy
+				this.state.alive = Date.now();
+			}
+		}.bind(this), 1000);
+
 		this.refreshAccounts();
 	},
 
@@ -51,23 +70,27 @@ var Dashboard = React.createClass({
 	},
 
 	apiCall: function(url, success) {
-		$.ajax({url: url, dataType: 'json', cache: false,
-			success: function(data) {
-				if (this.state.apiFailure == url) {
-					this.setState({apiOnline: true, apiFailure: ""});
-				}
-				success(data)
-			}.bind(this),
+		$.ajax({url: url, dataType: 'json', cache: false, success: success,
 			error: function(xhr, status, err) {
-				this.setState({apiOnline: false, apiFailure: url});
 				console.error(url, status, err.toString());
 			}.bind(this)
 		});
 	},
-	needSync: function(needed) {
-		this.setState({needSync: needed});
-	},
 	render: function() {
+		// Do not render anything until we get our state from the backend
+		if (this.state.server == null) {
+			return (
+				<div className="row">
+					<div className="col-lg-3"></div>
+					<div className="col-lg-6">
+						<div className="well" style={{textAlign: "center"}}>
+						  <span><i className="fa fa-refresh fa-spin"></i>&nbsp;&nbsp;Connecting to Ether APIs backend...</span>
+						</div>
+					</div>
+				</div>
+			)
+		}
+		// State available, render the full dashboard
 		return (
 			<div style={{height: "100%"}}>
 				<nav className="navbar navbar-fixed-top">
@@ -82,13 +105,12 @@ var Dashboard = React.createClass({
 								<li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
 								<li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
 							</ul>
-							<EthereumStats ajax={this.apiCall} apiurl={this.props.apiurl + "/ethereum"} refresh={1000} nosync={this.needSync}/>
+							<EthereumStats data={this.state.server.ethereum}/>
 						</div>
 					</div>
 				</nav>
 				<div className="container" style={{minHeight: "100%", margin: "0 auto -" + this.state.footer}}>
-					<BackendError hide={this.state.apiOnline}/>
-					<NotSyncedWarning hide={!this.state.needSync || !this.state.apiOnline}/>
+					<StaleChainWarning head={this.state.server.ethereum.head} threshold={180}/>
 
 					<Tutorial hide={this.state.section != "index"}/>
 					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl} ajax={this.apiCall} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount} refresh={this.refreshAccounts}/>
@@ -104,39 +126,14 @@ var Dashboard = React.createClass({
 });
 window.Dashboard = Dashboard // Expose the component
 
-// BackendError is a UI component displaying an error message when an API ajax
-// request fails for some reason. It is just a simple "danger" alert. Figuring
-// out when to display it and when the error was resolved and it cn be hidden
-// is left to the user.
-//
-// Properties:
-//	 hide: Flag whether to hide or show the error - bool
-var BackendError = React.createClass({
-	render: function() {
-		if (this.props.hide) {
-			return null
-		}
-		return (
-			<div className="row">
-				<div className="col-lg-3"></div>
-				<div className="col-lg-6">
-					<div className="alert alert-danger text-center" role="alert">
-						<i className="fa fa-exclamation-triangle"></i> <strong>Backend offline!</strong> Please check console for details...
-					</div>
-				</div>
-			</div>
-		)
-	}
-});
-
-// NotSyncedWarning is a UI component displaying a warning message when the local
+// StaleChainWarning is a UI component displaying a warning message when the local
 // blockchain is older than a certain threshold.
 //
 // Properties:
-//	 hide: Flag whether to hide or show the error - bool
-var NotSyncedWarning = React.createClass({
+//	 head: Head block based on which to show or hide the warning
+var StaleChainWarning = React.createClass({
 	render: function() {
-		if (this.props.hide) {
+		if (moment().unix() < this.props.head.time + this.props.threshold) {
 			return null
 		}
 		return (

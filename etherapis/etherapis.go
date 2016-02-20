@@ -158,6 +158,17 @@ func (eapis *EtherAPIs) Accounts() ([]common.Address, error) {
 	return addresses, nil
 }
 
+// Geth retrieves the Ethereum client through which to interact with the underlying
+// peer-to-peer networking layer.
+func (eapis *EtherAPIs) Geth() *geth.Geth {
+	return eapis.client
+}
+
+// Ethereum retrieves the Ethereum protocol running within the connected client.
+func (eapis *EtherAPIs) Ethereum() *eth.Ethereum {
+	return eapis.ethereum
+}
+
 // Contract retrieves the Ether APIs Ethereum contract to access the consensus data.
 func (eapis *EtherAPIs) Contract() *contract.Contract {
 	return eapis.contract

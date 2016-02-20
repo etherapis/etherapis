@@ -36,9 +36,6 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/{password:.+}", handler.AccountExport)
-	router.HandleFunc(base+"ethereum/peers", handler.PeerInfos)
-	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
-	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
 	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
@@ -225,40 +222,4 @@ func (a *api) AccountExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
 	w.Write(pretty.Bytes())
-}
-
-// PeerInfos retrieves the currently connected peers and returns them in their
-// raw Ethereum API reply form.
-func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("admin_peers", nil)
-	if err != nil {
-		log15.Error("Failed to retrieve connected peers", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(reply)
-}
-
-// SyncStatus retrieves the current sync status and returns it in its raw
-// Ethereum API reply form.
-func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("eth_syncing", nil)
-	if err != nil {
-		log15.Error("Failed to retrieve sync status", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(reply)
-}
-
-// HeadBlock retrieves the current head block and returns it in its raw
-// Ethereum API reply form.
-func (a *api) HeadBlock(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("eth_getBlockByNumber", []interface{}{"latest", false})
-	if err != nil {
-		log15.Error("Failed to retrieve head block", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(reply)
 }
