@@ -116,22 +116,6 @@ func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
 // a new account is imported using the uploaded key file and access password.
 func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.Method == "GET":
-		// List the available accounts
-		accounts, err := a.eapis.Accounts()
-		if err != nil {
-			log15.Error("Failed to retrieve accounts", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		out, err := json.Marshal(accounts)
-		if err != nil {
-			log15.Error("Failed to marshal account list", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(out)
-
 	case r.Method == "POST" && r.FormValue("action") == "create":
 		// Create a brand new random account
 		address, err := a.eapis.CreateAccount()
@@ -183,15 +167,6 @@ func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	case "GET":
-		out, err := json.Marshal(a.eapis.GetAccount(common.HexToAddress(params["address"])))
-		if err != nil {
-			log15.Error("Failed to marshal account", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write(out)
 	default:
 		log15.Error("Invalid method on account endpoint", "method", r.Method)
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)

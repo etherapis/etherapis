@@ -6,19 +6,22 @@ var Accounts = React.createClass({
 		if (this.props.hide) {
 			return null
 		}
+		// Gather the addresses from the accounts map
+		var addresses = Object.keys(this.props.accounts)
+
 		return (
 			<div>
 				{
-					this.props.accounts.length == 0 ? null :
+					addresses.length == 0 ? null :
 					<div className="row">
 						<div className="col-lg-12">
 							<h3>My accounts</h3>
 						</div>
 						{
-							this.props.accounts.map(function(account) {
+							addresses.map(function(address) {
 								return (
-									<div key={account} className="col-lg-6">
-										<Account apiurl={this.props.apiurl} explorer={this.props.explorer} account={account} active={this.props.active} switch={this.props.accounts.length > 1 ? this.props.switch : null} ajax={this.props.ajax} refresh={this.props.refresh}/>
+									<div key={address} className="col-lg-6">
+										<Account apiurl={this.props.apiurl} explorer={this.props.explorer} address={address} details={this.props.accounts[address]} active={this.props.active} switch={addresses.length > 1 ? this.props.switch : null}/>
 									</div>
 								)
 							}.bind(this))
@@ -29,8 +32,8 @@ var Accounts = React.createClass({
 					<div className="col-lg-12">
 						<h3>Add account</h3>
 					</div>
-					<div className="col-lg-6"><AccountCreator apiurl={this.props.apiurl + "/accounts"} refresh={this.props.refresh}/></div>
-					<div className="col-lg-6"><AccountImporter apiurl={this.props.apiurl + "/accounts"} refresh={this.props.refresh}/></div>
+					<div className="col-lg-6"><AccountCreator apiurl={this.props.apiurl} switch={this.props.switch}/></div>
+					<div className="col-lg-6"><AccountImporter apiurl={this.props.apiurl} switch={this.props.switch}/></div>
 				</div>
 			</div>
 		);
@@ -45,15 +48,10 @@ var Account = React.createClass({
 	getInitialState: function() {
 		return {
 			action: "",
-			services: [],
-			subscriptions: [],
-			account: {
-				balance: "",
-			},
 		};
 	},
 	// activate switches the dashboard to use this particular account.
-	activate: function() { this.props.switch(this.props.account); },
+	activate: function() { this.props.switch(this.props.address); },
 
 	// abortAction restores the account UI into it's default no-action state.
 	abortAction: function() { this.setState({action: ""}); },
@@ -66,32 +64,14 @@ var Account = React.createClass({
 	// confirmation buttons.
 	confirmDelete: function() { this.setState({action: "delete"}); },
 
-	// componentDidMount is called when this view is loaded and presented.
-	componentDidMount: function() { this.refreshDetails(); },
-
-	// refreshDetails will set the state of the services and subscriptions
-	refreshDetails: function() {
-		this.props.ajax(this.props.apiurl + "/services/" + this.props.account, function(services) {
-			this.setState({services: services});
-		}.bind(this));
-
-		this.props.ajax(this.props.apiurl + "/subscriptions/" + this.props.account, function(subscriptions) {
-			this.setState({subscriptions: subscriptions});
-		}.bind(this));
-
-		this.props.ajax(this.props.apiurl + "/accounts/" + this.props.account, function(account) {
-			this.setState({account: account});
-		}.bind(this));
-	},
-
 	// render flattens the account stats into a UI panel.
 	render: function() {
 		return (
-			<div className={this.props.account == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
+			<div className={this.props.address == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
 				<div className="panel-heading">
-					<img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.account, size: 8, scale: 2}).toDataURL()}/>
-					<span style={{fontFamily: "monospace"}}>{this.props.account}</span>{this.props.account == this.props.active && this.props.switch != null ? " – Active" : null}
-					<a href={this.props.explorer + this.props.account} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
+					<img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
+					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>{this.props.address == this.props.active && this.props.switch != null ? " – Active" : null}
+					<a href={this.props.explorer + this.props.address} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
 				</div>
 				<div className="panel-body">
 					<table className="table">
@@ -101,22 +81,22 @@ var Account = React.createClass({
 								<th>Subscriptions</th>
 						</tr></thead>
 						<tbody><tr>
-							<td>{formatBalance(this.state.account.balance)}</td>
-							<td>{this.state.services.length}</td>
-							<td>{this.state.subscriptions.length}</td>
+							<td>{formatBalance(this.props.details.balance)}</td>
+							<td>{0}</td>
+							<td>{0}</td>
 						</tr></tbody>
 					</table>
 					<div className="clearfix">
 						<hr style={{margin: "10px 0"}}/>
-						{ this.props.account == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
+						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
 							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-user-times"></i> Delete</a>
 						</div>
 					</div>
-					<ExportConfirm apiurl={this.props.apiurl + "/accounts"} account={this.props.account} hide={this.state.action != "export"} abort={this.abortAction}/>
-					<DeleteConfirm apiurl={this.props.apiurl + "/accounts"} account={this.props.account} hide={this.state.action != "delete"} abort={this.abortAction} active={this.props.active} refresh={this.props.refresh}/>
+					<ExportConfirm apiurl={this.props.apiurl} address={this.props.address} hide={this.state.action != "export"} abort={this.abortAction}/>
+					<DeleteConfirm apiurl={this.props.apiurl} address={this.props.address} hide={this.state.action != "delete"} abort={this.abortAction}/>
 				</div>
 			</div>
 		);
@@ -144,7 +124,7 @@ var ExportConfirm = React.createClass({
 	exportAccount: function() {
 		this.setState({progress: true});
 
-		// We have no idea how much time it takes, display for 2 secs, ten hide :P
+		// We have no idea how much time it takes, display for 2 secs, then hide :P
 		setTimeout(function() {
 			this.setState(this.getInitialState());
 			this.props.abort();
@@ -170,7 +150,7 @@ var ExportConfirm = React.createClass({
 				</div>
 				<div style={{textAlign: "center"}}>
 					<p><strong>Do not forget this password, there is no way to recover it!</strong></p>
-					<a href={this.props.apiurl + "/" + this.props.account + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
+					<a href={this.props.apiurl + "/" + this.props.address + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
 						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Export this account
 					</a>
 					&nbsp;&nbsp;&nbsp;
@@ -198,11 +178,7 @@ var DeleteConfirm = React.createClass({
 		this.setState({progress: true});
 
 		// Execute the account deletion request
-		$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.account, cache: false,
-			success: function() {
-				this.setState({progress: false, failure: null});
-				this.props.refresh(this.props.active);
-			}.bind(this),
+		$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.address, cache: false,
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});
 			}.bind(this),
@@ -257,7 +233,7 @@ var AccountCreator = React.createClass({
 		$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
 			success: function(data) {
 				this.setState({progress: false, failure: null});
-				this.props.refresh(data);
+				this.props.switch(data);
 			}.bind(this),
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});
@@ -332,7 +308,7 @@ var AccountImporter = React.createClass({
 		$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
 			success: function(data) {
 				this.setState(this.getInitialState());
-				this.props.refresh(data);
+				this.props.switch(data);
 			}.bind(this),
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});

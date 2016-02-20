@@ -25,7 +25,10 @@ import (
 // display any data that a user might need. It is maintained throughout the life
 // cycle of an active dashboard connection.
 type state struct {
-	// Ethereum contains all the information pertaining to the Ethereum network.
+	// Accounts contains all the known information about owned accounts
+	Accounts map[string]etherapis.Account
+
+	// Ethereum contains all the information pertaining to the Ethereum network
 	Ethereum struct {
 		Self    *p2p.NodeInfo        // Network connectivity information about the current node
 		Peers   []*p2p.PeerInfo      // Network connectivity information about remote peers
@@ -41,10 +44,17 @@ func (s *state) Apply(diff stateDiff) {
 
 	// Drill down in the state struct to find the node to update
 	current := reflect.ValueOf(s)
-	for _, child := range diff.Path {
-		if current.Kind() == reflect.Ptr {
+	for i, child := range diff.Path {
+		switch current.Kind() {
+		case reflect.Ptr:
 			current = current.Elem().FieldByName(strings.ToUpper(child[:1]) + child[1:])
-		} else {
+		case reflect.Map:
+			if i == len(diff.Path)-1 {
+				current.SetMapIndex(reflect.ValueOf(child), reflect.ValueOf(diff.Node))
+				return
+			}
+			current = current.MapIndex(reflect.ValueOf(child))
+		default:
 			current = current.FieldByName(strings.ToUpper(child[:1]) + child[1:])
 		}
 	}
@@ -107,6 +117,12 @@ func (server *stateServer) start() {
 	eth := server.eapis.Ethereum()
 
 	// Assemble the initial state
+	accounts, _ := server.eapis.Accounts()
+
+	server.state.Accounts = make(map[string]etherapis.Account)
+	for _, account := range accounts {
+		server.state.Accounts[account.Hex()] = server.eapis.GetAccount(account)
+	}
 	server.state.Ethereum.Self = node.Server().NodeInfo()
 	server.state.Ethereum.Head = eth.BlockChain().CurrentBlock().Header()
 	server.state.Ethereum.Peers = node.Server().PeersInfo()
@@ -126,7 +142,7 @@ func (server *stateServer) loop() {
 	node := server.eapis.Geth().Stack()
 	eth := server.eapis.Ethereum()
 
-	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{})
+	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
 	gethPoller := time.NewTicker(time.Second)
 
 	for {
@@ -155,6 +171,22 @@ func (server *stateServer) loop() {
 				update.Diffs = append(update.Diffs, []stateDiff{
 					{Path: []string{"ethereum", "self"}, Node: node.Server().NodeInfo()},
 					{Path: []string{"ethereum", "head"}, Node: head.Header()},
+				}...)
+
+			case etherapis.NewAccountEvent:
+				// A new account was created, push it out to the dashboard
+				logger.Debug("New account created/imported", "address", event.Address.Hex())
+
+				update.Diffs = append(update.Diffs, []stateDiff{
+					{Path: []string{"accounts", event.Address.Hex()}, Node: server.eapis.GetAccount(event.Address)},
+				}...)
+
+			case etherapis.DroppedAccountEvent:
+				// An existing account was deleted, remove it from any dahsboards
+				logger.Debug("Existing account deleted", "address", event.Address.Hex())
+
+				update.Diffs = append(update.Diffs, []stateDiff{
+					{Path: []string{"accounts", event.Address.Hex()}, Node: nil},
 				}...)
 
 			default:

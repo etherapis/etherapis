@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/event"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -18,6 +19,7 @@ import (
 type EtherAPIs struct {
 	client   *geth.Geth         // Embedded Ethereum client
 	ethereum *eth.Ethereum      // Actual Ethereum protocol within the client
+	eventmux *event.TypeMux     // Event multiplexer to announce various happenings
 	rpcapi   *geth.API          // In-process RPC interface to the embedded client
 	password string             // Master password to use to handle local accounts
 	contract *contract.Contract // Ethereum contract handling consensus stuff
@@ -52,6 +54,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 	return &EtherAPIs{
 		client:   client,
 		ethereum: ethereum,
+		eventmux: client.Stack().EventMux(),
 		rpcapi:   api,
 		contract: contract,
 	}, nil
@@ -96,6 +99,8 @@ func (eapis *EtherAPIs) CreateAccount() (common.Address, error) {
 	if err := eapis.ethereum.AccountManager().Unlock(account.Address, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly created account failed to unlock: %v", err))
 	}
+	go eapis.eventmux.Post(NewAccountEvent{account.Address})
+
 	return account.Address, err
 }
 
@@ -115,6 +120,8 @@ func (eapis *EtherAPIs) ImportAccount(keyjson []byte, password string) (common.A
 	if err := eapis.ethereum.AccountManager().Unlock(key.Address, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly imported account failed to unlock: %v", err))
 	}
+	go eapis.eventmux.Post(NewAccountEvent{key.Address})
+
 	return key.Address, nil
 }
 
@@ -130,7 +137,11 @@ func (eapis *EtherAPIs) ExportAccount(account common.Address, password string) (
 
 // DeleteAccount irreversibly deletes an account from the key store.
 func (eapis *EtherAPIs) DeleteAccount(account common.Address) error {
-	return eapis.ethereum.AccountManager().DeleteAccount(account, eapis.password)
+	if err := eapis.ethereum.AccountManager().DeleteAccount(account, eapis.password); err != nil {
+		return err
+	}
+	go eapis.eventmux.Post(DroppedAccountEvent{account})
+	return nil
 }
 
 // Account represents an ethereum account.

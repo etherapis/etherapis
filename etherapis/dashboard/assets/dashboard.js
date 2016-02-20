@@ -7,9 +7,8 @@ var Dashboard = React.createClass({
 	// getInitialState sets the zero values of the component.
 	getInitialState: function() {
 		return {
-			section:  "index",
-			accounts: [],
-			account:  "",
+			section: "index",
+			account: "",
 
 			server: null,       // State data injected by the Ether APIs backend
 			alive:  Date.now(), // Timestamp (ms) of the last state update
@@ -22,6 +21,10 @@ var Dashboard = React.createClass({
 	componentDidMount: function() {
 		// Connect to the backend to receive state updates
 		var server = new EtherAPIs("ws://localhost:8080/api/v1/", function(state) {
+			// Sanity check the the active address wans't deleted
+			if (state.accounts[this.state.account] === undefined) {
+				this.state.account = Object.keys(state.accounts)[0]
+			}
 			this.setState({server: state, alive: Date.now()});
 		}.bind(this));
 
@@ -38,8 +41,6 @@ var Dashboard = React.createClass({
 				this.state.alive = Date.now();
 			}
 		}.bind(this), 1000);
-
-		this.refreshAccounts();
 	},
 
 	loadIndex:			function() { this.setState({section: "index"}); },
@@ -48,25 +49,9 @@ var Dashboard = React.createClass({
 	loadMarket:		 function() { this.setState({section: "market"}); },
 	loadAccount:		function() { this.setState({section: "account"}); },
 
-	// refreshAccounts retrieves the current accounts configured, and if successful,
-	// also loads up any associated data.
-	refreshAccounts: function(selected) {
-		this.apiCall(this.props.apiurl + "/accounts", function(accounts) {
-			var primary = null;
-			for (var i = 0; i < accounts.length; i++) {
-				if (accounts[i] == selected) {
-					primary = selected;
-				}
-			}
-			if (primary == null) {
-				primary = accounts[0];
-			}
-			this.setState({accounts: accounts.sort(), account: primary});
-		}.bind(this));
-	},
 	// switchAccount switches out the currently active account to the one specified.
-	switchAccount: function(account) {
-		this.setState({account: account});
+	switchAccount: function(address) {
+		this.setState({account: address});
 	},
 
 	apiCall: function(url, success) {
@@ -113,7 +98,7 @@ var Dashboard = React.createClass({
 					<StaleChainWarning head={this.state.server.ethereum.head} threshold={180}/>
 
 					<Tutorial hide={this.state.section != "index"}/>
-					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl} ajax={this.apiCall} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.accounts} active={this.state.account} switch={this.switchAccount} refresh={this.refreshAccounts}/>
+					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"	} explorer={"http://testnet.etherscan.io/address/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
 					<Provider hide={this.state.section != "provider"} ajax={this.apiCall} apiurl={this.props.apiurl} address={this.state.accounts} />
 					<Subscriber hide={this.state.section != "subscriber"}/>
 					<Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>

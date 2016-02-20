@@ -24,7 +24,11 @@ EtherAPIs.prototype.update = function(message) {
 		while (diffs[i].path.length > 1) {
 			parent = parent[diffs[i].path.shift()];
 		}
-		parent[diffs[i].path[0]] = diffs[i].node;
+		if (diffs[i].node != null) {
+			parent[diffs[i].path[0]] = diffs[i].node;
+		} else {
+			delete parent[diffs[i].path[0]];
+		}
 	}
 	this.alive = Date.now();
 
