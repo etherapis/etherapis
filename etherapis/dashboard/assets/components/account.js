@@ -51,19 +51,33 @@ var Account = React.createClass({
 		};
 	},
 	// activate switches the dashboard to use this particular account.
-	activate: function() { this.props.switch(this.props.address); },
-
+	activate: function(event) {
+		event.preventDefault();
+		this.props.switch(this.props.address);
+	},
 	// abortAction restores the account UI into it's default no-action state.
-	abortAction: function() { this.setState({action: ""}); },
-
+	abortAction: function(event) {
+		event.preventDefault();
+		this.setState({action: ""});
+	},
+	// transferFunds displays the account export warning message, the password input
+	// field to encrypt the key with and the manual confirmation buttons.
+	transferFunds: function(event) {
+		event.preventDefault();
+		this.setState({action: "transfer"});
+	},
 	// confirmExport displays the account export warning message, the password input
 	// field to encrypt the key with and the manual confirmation buttons.
-	confirmExport: function() { this.setState({action: "export"}); },
-
+	confirmExport: function(event) {
+		event.preventDefault();
+		this.setState({action: "export"});
+	},
 	// confirmDelete displays the account deletion warning messages and the manual
 	// confirmation buttons.
-	confirmDelete: function() { this.setState({action: "delete"}); },
-
+	confirmDelete: function(event) {
+		event.preventDefault();
+		this.setState({action: "delete"});
+	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
 		return (
@@ -90,11 +104,14 @@ var Account = React.createClass({
 						<hr style={{margin: "10px 0"}}/>
 						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
+							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
+							&nbsp;
 							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-user-times"></i> Delete</a>
 						</div>
 					</div>
+					<TransferFunds apiurl={this.props.apiurl} address={this.props.address} hide={this.state.action != "transfer"} abort={this.abortAction}/>
 					<ExportConfirm apiurl={this.props.apiurl} address={this.props.address} hide={this.state.action != "export"} abort={this.abortAction}/>
 					<DeleteConfirm apiurl={this.props.apiurl} address={this.props.address} hide={this.state.action != "delete"} abort={this.abortAction}/>
 				</div>
@@ -102,6 +119,77 @@ var Account = React.createClass({
 		);
 	}
 });
+
+// TransferFunds can be used to transfer funds from one account to another, either
+// local or external.
+var TransferFunds = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			recipient: "",
+			amount:    "",
+			unit:      "Ether",
+			progress:  false,
+			failure:	 null,
+		};
+	},
+	// updateRecipient, updateAmount and updateUnit pulls in the users modifications
+	// from the input boxes and updates the UIs internal state with it.
+	updateRecipient: function(event) { this.setState({recipient: event.target.value}); },
+	updateAmount:    function(event) { this.setState({amount: event.target.value}); },
+
+	updateUnit: function(event) {
+		event.preventDefault();
+		this.setState({unit: event.target.textContent});
+	},
+	// transferFunds executes the actual fund transfer.
+	transferFunds: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
+		this.setState({progress: true});
+
+		setTimeout(function() {
+			this.setState({progress: false, failure: "Would be nice to implement this :D"});
+			this.props.abort();
+		}.bind(this), 1000);
+	},
+	// render flattens the account stats into a UI panel.
+	render: function() {
+		// Short circuit rendering if we're not confirming deletion
+		if (this.props.hide) {
+			return null
+		}
+		return (
+			<div>
+				<hr/>
+				<div className="form-group">
+					<div className="input-group pull-right" style={{width: "30%"}}>
+			      <input type="text" className="form-control" onChange={this.updateAmount}/>
+			      <div className="input-group-btn">
+			        <button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.unit} <span className="caret"></span></button>
+			        <ul className="dropdown-menu dropdown-menu-right">
+			          <li><a href="#" onClick={this.updateUnit}>Ether</a></li>
+			          <li><a href="#" onClick={this.updateUnit}>Finney</a></li>
+			          <li><a href="#" onClick={this.updateUnit}>Wei</a></li>
+			        </ul>
+			      </div>
+			    </div>
+					<input type="text" className="form-control" style={{width: "68%"}} placeholder="Recipient address" onChange={this.updateRecipient}/>
+				</div>
+				<div style={{textAlign: "center"}}>
+					<p><strong>Please ensure you are in sync with the network to make transfers.</strong></p>
+					<a href={this.props.apiurl + "/" + this.props.address + "?password=" + this.state.input} className={"btn btn-primary " + (this.state.recipient == "" || this.state.amount == "" || this.state.progress ? "disabled" : "")} onClick={this.transferFunds}>
+						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Initiate transfer
+					</a>
+					&nbsp;&nbsp;&nbsp;
+					<a href="#" className="btn btn-default" onClick={this.props.abort}>Cancel transfer</a>
+				</div>
+				{ this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to transfer funds: {this.state.failure}</p></div> : null }
+			</div>
+		)
+	}
+})
 
 // ExportConfirm displays a warning message and requires an addtional confirmation
 // from the user to ensure that no accidental account deletion happens.
@@ -121,7 +209,10 @@ var ExportConfirm = React.createClass({
 
 	// exportAccount executes the actual account export, sending back the account
 	// identifier along with the password to encrypt it with.
-	exportAccount: function() {
+	exportAccount: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
 		this.setState({progress: true});
 
 		// We have no idea how much time it takes, display for 2 secs, then hide :P
@@ -173,7 +264,9 @@ var DeleteConfirm = React.createClass({
 	},
 	// deleteAccount executes the actual account deletion, sending back the account
 	// identifier to the server for irreversible removal.
-	deleteAccount: function() {
+	deleteAccount: function(event) {
+		event.preventDefault();
+
 		// Show the spinner until something happens
 		this.setState({progress: true});
 
@@ -222,7 +315,9 @@ var AccountCreator = React.createClass({
 	},
 	// createAccount executes the actual account creation, sending an account
 	// generation request to the backend server.
-	createAccount: function() {
+	createAccount: function(event) {
+		event.preventDefault();
+
 		// Show the spinner until something happens
 		this.setState({progress: true});
 
