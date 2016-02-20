@@ -7,7 +7,7 @@ var Accounts = React.createClass({
 			return null
 		}
 		// Gather the addresses from the accounts map
-		var addresses = Object.keys(this.props.accounts)
+		var addresses = Object.keys(this.props.accounts).sort();
 
 		return (
 			<div>
@@ -150,7 +150,7 @@ var ExportConfirm = React.createClass({
 				</div>
 				<div style={{textAlign: "center"}}>
 					<p><strong>Do not forget this password, there is no way to recover it!</strong></p>
-					<a href={this.props.apiurl + "/" + this.props.address + "/" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
+					<a href={this.props.apiurl + "/" + this.props.address + "?password=" + this.state.input} className={"btn btn-warning " + (this.state.input == "" || this.state.input != this.state.confirm || this.state.progress ? "disabled" : "")} onClick={this.exportAccount}>
 						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Export this account
 					</a>
 					&nbsp;&nbsp;&nbsp;

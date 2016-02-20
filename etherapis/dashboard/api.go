@@ -35,7 +35,6 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
-	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/{password:.+}", handler.AccountExport)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
 	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
@@ -158,8 +157,35 @@ func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
 func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	// Only reply for deletion requests and get request
+	// Only reply for deletion requests
 	switch r.Method {
+	case "GET":
+		// Make sure the user provided a password to export with
+		password := r.URL.Query().Get("password")
+		if password == "" {
+			log15.Error("Export with empty password denied", "address", params["address"])
+			http.Error(w, "password required to export account", http.StatusBadRequest)
+			return
+		}
+		// Export the key into a json key file and return and error if something goes wrong
+		key, err := a.eapis.ExportAccount(common.HexToAddress(params["address"]), password)
+		if err != nil {
+			log15.Error("Failed to export account", "address", params["address"], "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Pretty print the key json since the exporter sucks :P
+		pretty := new(bytes.Buffer)
+		if err := json.Indent(pretty, key, "", "  "); err != nil {
+			log15.Error("Failed to pretty print key", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Set the correct header to ensure download (i.e. no display) and dump the contents
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
+		w.Write(pretty.Bytes())
+
 	case "DELETE":
 		// Delete the account and return an error if something goes wrong
 		if err := a.eapis.DeleteAccount(common.HexToAddress(params["address"])); err != nil {
@@ -167,34 +193,10 @@ func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 	default:
 		log15.Error("Invalid method on account endpoint", "method", r.Method)
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
 		return
 	}
-}
-
-// AccountExport handles the request to export an account with a particular
-// password set.
-func (a *api) AccountExport(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-
-	// Export the key into a json key file and return and error if something goes wrong
-	key, err := a.eapis.ExportAccount(common.HexToAddress(params["address"]), params["password"])
-	if err != nil {
-		log15.Error("Failed to export account", "address", params["address"], "error", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	// Pretty print the key json since the exporter sucks :P
-	pretty := new(bytes.Buffer)
-	if err := json.Indent(pretty, key, "", "  "); err != nil {
-		log15.Error("Failed to pretty print key", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Set the correct header to ensure download (i.e. no display) and dump the contents
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
-	w.Write(pretty.Bytes())
 }
