@@ -22,8 +22,7 @@ func New(eapis *etherapis.EtherAPIs, assetsPath string) *http.ServeMux {
 		router.HandleFunc("/", handleAsset)
 	}
 	// Register the various API handlers
-	router.Handle("/api/v0/", newAPIServeMux("/api/v0/", eapis))
-	router.Handle("/api/v1/", newStateServer("/api/v1/", eapis))
+	router.Handle("/api/v1/", newAPIServeMux("/api/v1/", eapis))
 
 	return router
 }

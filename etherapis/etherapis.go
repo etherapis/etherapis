@@ -146,14 +146,21 @@ func (eapis *EtherAPIs) DeleteAccount(account common.Address) error {
 
 // Account represents an ethereum account.
 type Account struct {
-	Nonce   uint64 `json:"nonce"`
-	Balance string `json:"balance"`
+	Nonce          uint64 `json:"nonce"`
+	CurrentBalance string `json:"currentBalance"`
+	PendingBalance string `json:"pendingBalance"`
 }
 
 // GetAccount returns the data associated with the account.
 func (eapis *EtherAPIs) GetAccount(account common.Address) Account {
-	state := eapis.ethereum.Miner().PendingState()
-	return Account{Nonce: state.GetNonce(account), Balance: state.GetBalance(account).String()}
+	state, _ := eapis.ethereum.BlockChain().State()
+	pending := eapis.ethereum.Miner().PendingState()
+
+	return Account{
+		Nonce:          pending.GetNonce(account),
+		CurrentBalance: state.GetBalance(account).String(),
+		PendingBalance: pending.GetBalance(account).String(),
+	}
 }
 
 // Accounts retrieves the list of accounts known to etherapis.

@@ -20,7 +20,7 @@ var Dashboard = React.createClass({
 	// loads up the Ethereum account used by the Ether APIs server.
 	componentDidMount: function() {
 		// Connect to the backend to receive state updates
-		var server = new EtherAPIs("ws://localhost:8080/api/v1/", function(state) {
+		var server = new EtherAPIs("ws://" + window.location.href.split("/")[2] + this.props.apiurl + "/", function(state) {
 			// Sanity check the the active address wans't deleted
 			if (state.accounts[this.state.account] === undefined) {
 				this.state.account = Object.keys(state.accounts)[0]

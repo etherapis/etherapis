@@ -32,6 +32,7 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	}
 	// Register all the API handler endpoints
 	router := mux.NewRouter()
+	router.Handle(base, newStateServer(base, eapis))
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)

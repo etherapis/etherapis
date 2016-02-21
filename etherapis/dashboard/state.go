@@ -142,8 +142,21 @@ func (server *stateServer) loop() {
 	node := server.eapis.Geth().Stack()
 	eth := server.eapis.Ethereum()
 
-	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
+	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, core.TxPreEvent{}, core.TxPostEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
 	gethPoller := time.NewTicker(time.Second)
+
+	// Quick hack helper method to check for account updates
+	updateAccounts := func(update *stateUpdate) {
+		addresses, _ := server.eapis.Accounts()
+		for _, address := range addresses {
+			previous := server.state.Accounts[address.Hex()]
+			current := server.eapis.GetAccount(address)
+
+			if previous.CurrentBalance != current.CurrentBalance || previous.PendingBalance != current.PendingBalance {
+				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"accounts", address.Hex()}, Node: current})
+			}
+		}
+	}
 
 	for {
 		// Prepare the state update diff list for population
@@ -172,6 +185,12 @@ func (server *stateServer) loop() {
 					{Path: []string{"ethereum", "self"}, Node: node.Server().NodeInfo()},
 					{Path: []string{"ethereum", "head"}, Node: head.Header()},
 				}...)
+				updateAccounts(update)
+
+			case core.TxPreEvent, core.TxPostEvent:
+				// A transaction was initiated or completed, check if we need to update accounts
+				logger.Debug("Transaction received/processed, checking accounts")
+				updateAccounts(update)
 
 			case etherapis.NewAccountEvent:
 				// A new account was created, push it out to the dashboard
@@ -223,7 +242,7 @@ func (server *stateServer) loop() {
 		for session, conn := range server.conns {
 			logger.Debug("Sending new state diff to dashboard", "session", session)
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				logger.Warn("Failed to send state update, dropping", "session", session, "error")
+				logger.Warn("Failed to send state update, dropping", "session", session, "error", err)
 				delete(server.conns, session)
 			}
 		}

@@ -80,6 +80,8 @@ var Account = React.createClass({
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
+		var balanceChange = parseInt(this.props.details.pendingBalance) - parseInt(this.props.details.currentBalance);
+
 		return (
 			<div className={this.props.address == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
 				<div className="panel-heading">
@@ -95,7 +97,15 @@ var Account = React.createClass({
 								<th>Subscriptions</th>
 						</tr></thead>
 						<tbody><tr>
-							<td>{formatBalance(this.props.details.balance)}</td>
+							<td>
+								{ formatBalance(this.props.details.currentBalance) }
+								&nbsp;
+								{ balanceChange != 0 ?
+									<span className={balanceChange < 0 ? "text-danger" : "text-success"}>
+										{balanceChange > 0 ? "+" : "-"} { formatBalance(Math.abs(balanceChange).toString()) }
+									</span> : null
+								}
+							</td>
 							<td>{0}</td>
 							<td>{0}</td>
 						</tr></tbody>
@@ -104,7 +114,7 @@ var Account = React.createClass({
 						<hr style={{margin: "10px 0"}}/>
 						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
-							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
+							{this.props.details.currentBalance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
 							&nbsp;
