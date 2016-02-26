@@ -142,7 +142,7 @@ func (server *stateServer) loop() {
 	node := server.eapis.Geth().Stack()
 	eth := server.eapis.Ethereum()
 
-	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, core.PendingLogsEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
+	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, core.PendingStateEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
 	gethPoller := time.NewTicker(time.Second)
 
 	// Quick hack helper method to check for account updates
@@ -188,7 +188,7 @@ func (server *stateServer) loop() {
 				}...)
 				updateAccounts(update)
 
-			case core.PendingLogsEvent:
+			case core.PendingStateEvent:
 				// The pending state of the system changed, check if we need to update accounts
 				logger.Info("Pending state changed, checking accounts")
 				updateAccounts(update)
