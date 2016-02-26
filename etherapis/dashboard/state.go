@@ -142,7 +142,7 @@ func (server *stateServer) loop() {
 	node := server.eapis.Geth().Stack()
 	eth := server.eapis.Ethereum()
 
-	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, core.TxPreEvent{}, core.TxPostEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
+	gethEvents := node.EventMux().Subscribe(core.ChainHeadEvent{}, core.PendingLogsEvent{}, etherapis.NewAccountEvent{}, etherapis.DroppedAccountEvent{})
 	gethPoller := time.NewTicker(time.Second)
 
 	// Quick hack helper method to check for account updates
@@ -152,7 +152,7 @@ func (server *stateServer) loop() {
 			previous := server.state.Accounts[address.Hex()]
 			current := server.eapis.GetAccount(address)
 
-			if previous.CurrentBalance != current.CurrentBalance || previous.PendingBalance != current.PendingBalance {
+			if previous.Balance != current.Balance || previous.Change != current.Change {
 				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"accounts", address.Hex()}, Node: current})
 			}
 		}
@@ -161,8 +161,9 @@ func (server *stateServer) loop() {
 	for {
 		// Prepare the state update diff list for population
 		update := &stateUpdate{
-			Id:   atomic.AddUint32(&server.diffs, 1),
-			Time: fmt.Sprintf("%v", time.Now()),
+			Id:    atomic.AddUint32(&server.diffs, 1),
+			Time:  fmt.Sprintf("%v", time.Now()),
+			Diffs: []stateDiff{},
 		}
 		logger := log15.New("diff", update.Id)
 
@@ -187,9 +188,9 @@ func (server *stateServer) loop() {
 				}...)
 				updateAccounts(update)
 
-			case core.TxPreEvent, core.TxPostEvent:
-				// A transaction was initiated or completed, check if we need to update accounts
-				logger.Debug("Transaction received/processed, checking accounts")
+			case core.PendingLogsEvent:
+				// The pending state of the system changed, check if we need to update accounts
+				logger.Info("Pending state changed, checking accounts")
 				updateAccounts(update)
 
 			case etherapis.NewAccountEvent:

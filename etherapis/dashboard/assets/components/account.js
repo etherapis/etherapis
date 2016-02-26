@@ -57,7 +57,9 @@ var Account = React.createClass({
 	},
 	// abortAction restores the account UI into it's default no-action state.
 	abortAction: function(event) {
-		event.preventDefault();
+		if (event != null) {
+			event.preventDefault();
+		}
 		this.setState({action: ""});
 	},
 	// transferFunds displays the account export warning message, the password input
@@ -80,29 +82,25 @@ var Account = React.createClass({
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
-		var balanceChange = parseInt(this.props.details.pendingBalance) - parseInt(this.props.details.currentBalance);
-
 		return (
 			<div className={this.props.address == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
 				<div className="panel-heading">
 					<img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
 					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>{this.props.address == this.props.active && this.props.switch != null ? " – Active" : null}
-					<a href={this.props.explorer + this.props.address} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
+					<a href={this.props.explorer + "address/" + this.props.address} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
 				</div>
 				<div className="panel-body">
 					<table className="table">
 						<thead><tr>
-								<th>Balance</th>
-								<th>Services</th>
-								<th>Subscriptions</th>
+							<th>Balance</th><th>Services</th><th>Subscriptions</th>
 						</tr></thead>
 						<tbody><tr>
 							<td>
-								{ formatBalance(this.props.details.currentBalance) }
+								{ formatBalance(this.props.details.balance) }
 								&nbsp;
-								{ balanceChange != 0 ?
-									<span className={balanceChange < 0 ? "text-danger" : "text-success"}>
-										{balanceChange > 0 ? "+" : "-"} { formatBalance(Math.abs(balanceChange).toString()) }
+								{ this.props.details.change != 0 ?
+									<span className={this.props.details.change < 0 ? "text-danger" : "text-success"}>
+										{this.props.details.change < 0 ? "-" : "+"} { formatBalance(Math.abs(this.props.details.change)) }
 									</span> : null
 								}
 							</td>
@@ -110,11 +108,34 @@ var Account = React.createClass({
 							<td>{0}</td>
 						</tr></tbody>
 					</table>
+					{
+						this.props.details.transactions.length == 0 ? null :
+							<table className="table table-striped table-condensed">
+								<thead><tr>
+									<th></th><th><small>From/To</small></th><th><small>Amount</small></th><th><small>Fees</small></th><th></th>
+								</tr></thead>
+								<tbody>
+									{
+										this.props.details.transactions.map(function(tx) {
+											return (
+												<tr key={tx.hash} className={tx.from == this.props.address ? "danger" : "success"}>
+													<td><small>{ tx.from == this.props.address ? <i className="fa fa-arrow-circle-o-right"></i> : <i className="fa fa-arrow-circle-o-left"></i>}</small></td>
+													<td><small>{ tx.from == this.props.address ? tx.to : tx.from }</small></td>
+													<td><small>{ formatBalance(tx.amount) }</small></td>
+													<td><small>{ formatBalance(tx.fees) }</small></td>
+													<td><small><a href={this.props.explorer + "tx/" + tx.hash} target="_blank"><i className="fa fa-external-link"></i></a></small></td>
+												</tr>
+											)
+										}.bind(this))
+									}
+								</tbody>
+							</table>
+					}
 					<div className="clearfix">
 						<hr style={{margin: "10px 0"}}/>
 						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
-							{this.props.details.currentBalance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
+							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
 							&nbsp;
@@ -159,10 +180,20 @@ var TransferFunds = React.createClass({
 		// Show the spinner until something happens
 		this.setState({progress: true});
 
-		setTimeout(function() {
-			this.setState({progress: false, failure: "Would be nice to implement this :D"});
-			this.props.abort();
-		}.bind(this), 1000);
+		// Assemble and send the value transfer request
+		var form = new FormData();
+		form.append("recipient", this.state.recipient);
+		form.append("amount", weiAmount(this.state.amount, this.state.unit));
+
+		$.ajax({type: "POST", url: this.props.apiurl + "/" + this.props.address + "/transactions", cache: false, data: form, processData: false, contentType: false,
+			success: function(data) {
+				this.setState(this.getInitialState());
+				this.props.abort(null);
+			}.bind(this),
+			error: function(xhr, status, err) {
+				this.setState({progress: false, failure: xhr.responseText});
+			}.bind(this),
+		});
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
@@ -175,7 +206,7 @@ var TransferFunds = React.createClass({
 				<hr/>
 				<div className="form-group">
 					<div className="input-group pull-right" style={{width: "30%"}}>
-			      <input type="text" className="form-control" onChange={this.updateAmount}/>
+			      <input type="text" className="form-control" value={this.state.amount} onChange={this.updateAmount}/>
 			      <div className="input-group-btn">
 			        <button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.unit} <span className="caret"></span></button>
 			        <ul className="dropdown-menu dropdown-menu-right">
@@ -185,7 +216,7 @@ var TransferFunds = React.createClass({
 			        </ul>
 			      </div>
 			    </div>
-					<input type="text" className="form-control" style={{width: "68%"}} placeholder="Recipient address" onChange={this.updateRecipient}/>
+					<input type="text" className="form-control" style={{width: "68%"}} placeholder="Recipient address" value={this.state.recipient} onChange={this.updateRecipient}/>
 				</div>
 				<div style={{textAlign: "center"}}>
 					<p><strong>Please ensure you are in sync with the network to make transfers.</strong></p>

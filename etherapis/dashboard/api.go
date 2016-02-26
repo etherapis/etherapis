@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"strings"
 
@@ -36,6 +37,7 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
+	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/transactions", handler.Transactions)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
 	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
@@ -199,5 +201,44 @@ func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 		log15.Error("Invalid method on account endpoint", "method", r.Method)
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
 		return
+	}
+}
+
+// Transactions handles POST requests against an account endpoint to initiate
+// outbound value transfers to other accounts.
+func (a *api) Transactions(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	switch {
+	case r.Method == "POST":
+		// Parse and validate the transfer parameters
+		sender := common.HexToAddress(params["address"])
+
+		recipient := r.FormValue("recipient")
+		if !common.IsHexAddress(recipient) {
+			log15.Warn("Invalid recipient", "recipient", recipient)
+			http.Error(w, fmt.Sprintf("Invalid recipient: %s", recipient), http.StatusBadRequest)
+			return
+		}
+		to := common.HexToAddress(recipient)
+
+		amount := r.FormValue("amount")
+		value, ok := new(big.Int).SetString(amount, 10)
+		if !ok || value.Cmp(big.NewInt(0)) <= 0 {
+			log15.Warn("Invalid amount", "amount", amount)
+			http.Error(w, fmt.Sprintf("Invalid amount: %s", amount), http.StatusBadRequest)
+			return
+		}
+		// Execute the value transfer and return an error or the transaction id
+		id, err := a.eapis.Transfer(sender, to, value)
+		if err != nil {
+			log15.Error("Failed to execute transfer", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("0x%x", id)))
+
+	default:
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
 	}
 }

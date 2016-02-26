@@ -648,9 +648,9 @@ func (env *Work) commitTransactions(mux *event.TypeMux, transactions types.Trans
 			coalescedLogs = append(coalescedLogs, logs...)
 		}
 	}
-	if len(coalescedLogs) > 0 {
-		go mux.Post(core.PendingLogsEvent{Logs: coalescedLogs})
-	}
+	//if len(coalescedLogs) > 0 {
+	go mux.Post(core.PendingLogsEvent{Logs: coalescedLogs})
+	//}
 }
 
 func (env *Work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, gp *core.GasPool) (error, vm.Logs) {
