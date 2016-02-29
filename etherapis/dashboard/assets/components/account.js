@@ -8,25 +8,36 @@ var Accounts = React.createClass({
 		}
 		// Gather the addresses from the accounts map
 		var addresses = Object.keys(this.props.accounts).sort();
+		var pairs     = [];
+		for (var i=0; i<addresses.length; i+=2) {
+			pairs.push({first: addresses[i], second: addresses[i+1]});
+		}
+		if (addresses.length == 0) {
+			return null;
+		}
 
 		return (
 			<div>
-				{
-					addresses.length == 0 ? null :
-					<div className="row">
-						<div className="col-lg-12">
-							<h3>My accounts</h3>
-						</div>
-						{
-							addresses.map(function(address) {
-								return (
-									<div key={address} className="col-lg-6">
-										<Account apiurl={this.props.apiurl} explorer={this.props.explorer} address={address} details={this.props.accounts[address]} active={this.props.active} switch={addresses.length > 1 ? this.props.switch : null}/>
-									</div>
-								)
-							}.bind(this))
-						}
+				<div className="row">
+					<div className="col-lg-12">
+						<h3>My accounts</h3>
 					</div>
+				</div>
+				{
+					pairs.map(function(pair) {
+						return (
+							<div key={pair.first} className="row">
+								<div className="col-lg-6">
+									<Account apiurl={this.props.apiurl} explorer={this.props.explorer} address={pair.first} details={this.props.accounts[pair.first]} active={this.props.active} switch={addresses.length > 1 ? this.props.switch : null}/>
+								</div>
+								{ pair.second === undefined ? null :
+									<div className="col-lg-6">
+										<Account apiurl={this.props.apiurl} explorer={this.props.explorer} address={pair.second} details={this.props.accounts[pair.second]} active={this.props.active} switch={addresses.length > 1 ? this.props.switch : null}/>
+									</div>
+								}
+							</div>
+						)
+					}.bind(this))
 				}
 				<div className="row">
 					<div className="col-lg-12">
@@ -118,12 +129,12 @@ var Account = React.createClass({
 									{
 										this.props.details.transactions.map(function(tx) {
 											return (
-												<tr key={tx.hash} className={tx.from == this.props.address ? "danger" : "success"}>
+												<tr key={tx.hash} className={tx.from == this.props.address ? "text-danger" : "text-success"}>
 													<td><small>{ tx.from == this.props.address ? <i className="fa fa-arrow-circle-o-right"></i> : <i className="fa fa-arrow-circle-o-left"></i>}</small></td>
 													<td><small>{ tx.from == this.props.address ? tx.to : tx.from }</small></td>
 													<td><small>{ formatBalance(tx.amount) }</small></td>
-													<td><small>{ formatBalance(tx.fees) }</small></td>
-													<td><small><a href={this.props.explorer + "tx/" + tx.hash} target="_blank"><i className="fa fa-external-link"></i></a></small></td>
+													<td><small>{ tx.from == this.props.address ? formatBalance(tx.fees) : null }</small></td>
+													<td><small><a href={this.props.explorer + "tx/" + tx.hash} target="_blank" className="text-muted"><i className="fa fa-external-link"></i></a></small></td>
 												</tr>
 											)
 										}.bind(this))
@@ -135,9 +146,9 @@ var Account = React.createClass({
 						<hr style={{margin: "10px 0"}}/>
 						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
-							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-sign-out"></i> Transfer</a> : null }
+							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-arrow-circle-o-right"></i> Transfer</a> : null }
 							&nbsp;
-							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-arrow-circle-o-down"></i> Export</a>
+							<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmExport}><i className="fa fa-download"></i> Export</a>
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-user-times"></i> Delete</a>
 						</div>
@@ -159,7 +170,7 @@ var TransferFunds = React.createClass({
 		return {
 			recipient: "",
 			amount:    "",
-			unit:      "Ether",
+			unit:      EthereumUnits[7],
 			progress:  false,
 			failure:	 null,
 		};
@@ -210,9 +221,10 @@ var TransferFunds = React.createClass({
 			      <div className="input-group-btn">
 			        <button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.unit} <span className="caret"></span></button>
 			        <ul className="dropdown-menu dropdown-menu-right">
-			          <li><a href="#" onClick={this.updateUnit}>Ether</a></li>
-			          <li><a href="#" onClick={this.updateUnit}>Finney</a></li>
-			          <li><a href="#" onClick={this.updateUnit}>Wei</a></li>
+			          <li><a href="#" onClick={this.updateUnit}>{EthereumUnits[7]}</a></li>
+			          <li><a href="#" onClick={this.updateUnit}>{EthereumUnits[6]}</a></li>
+			          <li><a href="#" onClick={this.updateUnit}>{EthereumUnits[5]}</a></li>
+								<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[4]}</a></li>
 			        </ul>
 			      </div>
 			    </div>
@@ -220,7 +232,7 @@ var TransferFunds = React.createClass({
 				</div>
 				<div style={{textAlign: "center"}}>
 					<p><strong>Please ensure you are in sync with the network to make transfers.</strong></p>
-					<a href={this.props.apiurl + "/" + this.props.address + "?password=" + this.state.input} className={"btn btn-primary " + (this.state.recipient == "" || this.state.amount == "" || this.state.progress ? "disabled" : "")} onClick={this.transferFunds}>
+					<a href={this.props.apiurl + "/" + this.props.address + "?password=" + this.state.input} className={"btn btn-default " + (this.state.recipient == "" || this.state.amount == "" || this.state.progress ? "disabled" : "")} onClick={this.transferFunds}>
 						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Initiate transfer
 					</a>
 					&nbsp;&nbsp;&nbsp;

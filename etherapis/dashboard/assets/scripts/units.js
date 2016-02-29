@@ -17,7 +17,9 @@ var EthereumUnits = {
 // formats it into a use friendlier display string.
 function formatBalance(balance) {
 	var balance = String(balance);
-
+	if (balance == "0") {
+		return balance + " " + EthereumUnits[7];
+	}
 	// Drop off all the trailing zeros
 	var scaling = 1;
 	while (balance.endsWith("000")) {
