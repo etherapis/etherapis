@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"sync"
 
 	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/geth"
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/params"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -18,9 +24,11 @@ import (
 type EtherAPIs struct {
 	client   *geth.Geth         // Embedded Ethereum client
 	ethereum *eth.Ethereum      // Actual Ethereum protocol within the client
+	eventmux *event.TypeMux     // Event multiplexer to announce various happenings
 	rpcapi   *geth.API          // In-process RPC interface to the embedded client
 	password string             // Master password to use to handle local accounts
 	contract *contract.Contract // Ethereum contract handling consensus stuff
+	txlock   sync.Mutex         // Serializes transaction creation to avoid nonce collisions
 }
 
 // New creates a new Ether APIs instance, connects with it to the Ethereum network
@@ -52,6 +60,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 	return &EtherAPIs{
 		client:   client,
 		ethereum: ethereum,
+		eventmux: client.Stack().EventMux(),
 		rpcapi:   api,
 		contract: contract,
 	}, nil
@@ -96,6 +105,8 @@ func (eapis *EtherAPIs) CreateAccount() (common.Address, error) {
 	if err := eapis.ethereum.AccountManager().Unlock(account.Address, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly created account failed to unlock: %v", err))
 	}
+	go eapis.eventmux.Post(NewAccountEvent{account.Address})
+
 	return account.Address, err
 }
 
@@ -115,6 +126,8 @@ func (eapis *EtherAPIs) ImportAccount(keyjson []byte, password string) (common.A
 	if err := eapis.ethereum.AccountManager().Unlock(key.Address, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly imported account failed to unlock: %v", err))
 	}
+	go eapis.eventmux.Post(NewAccountEvent{key.Address})
+
 	return key.Address, nil
 }
 
@@ -130,19 +143,54 @@ func (eapis *EtherAPIs) ExportAccount(account common.Address, password string) (
 
 // DeleteAccount irreversibly deletes an account from the key store.
 func (eapis *EtherAPIs) DeleteAccount(account common.Address) error {
-	return eapis.ethereum.AccountManager().DeleteAccount(account, eapis.password)
+	if err := eapis.ethereum.AccountManager().DeleteAccount(account, eapis.password); err != nil {
+		return err
+	}
+	go eapis.eventmux.Post(DroppedAccountEvent{account})
+	return nil
 }
 
-// Account represents an ethereum account.
+// Account represents an Ethereum account.
 type Account struct {
-	Nonce   uint64 `json:"nonce"`
-	Balance string `json:"balance"`
+	Nonce        uint64         `json:"nonce"`
+	Balance      *big.Int       `json:"balance"`
+	Change       *big.Int       `json:"change"`
+	Transactions []*Transaction `json:"transactions"`
+}
+
+// Transaction represents an Ethereum transaction.
+type Transaction struct {
+	Hash   common.Hash    `json:"hash"`
+	From   common.Address `json:"from"`
+	To     common.Address `json:"to"`
+	Amount *big.Int       `json:"amount"`
+	Fees   *big.Int       `json:"fees"`
 }
 
 // GetAccount returns the data associated with the account.
 func (eapis *EtherAPIs) GetAccount(account common.Address) Account {
-	state := eapis.ethereum.Miner().PendingState()
-	return Account{Nonce: state.GetNonce(account), Balance: state.GetBalance(account).String()}
+	state, _ := eapis.ethereum.BlockChain().State()
+	pending := eapis.ethereum.Miner().PendingState()
+
+	txs := []*Transaction{}
+	for _, tx := range eapis.ethereum.Miner().PendingBlock().Transactions() {
+		from, _ := tx.From()
+		if from == account || (tx.To() != nil && *tx.To() == account) {
+			txs = append(txs, &Transaction{
+				Hash:   tx.Hash(),
+				From:   from,
+				To:     *tx.To(),
+				Amount: tx.Value(),
+				Fees:   new(big.Int).Mul(tx.Gas(), tx.GasPrice()),
+			})
+		}
+	}
+	return Account{
+		Nonce:        pending.GetNonce(account),
+		Balance:      state.GetBalance(account),
+		Change:       new(big.Int).Sub(pending.GetBalance(account), state.GetBalance(account)),
+		Transactions: txs,
+	}
 }
 
 // Accounts retrieves the list of accounts known to etherapis.
@@ -156,6 +204,57 @@ func (eapis *EtherAPIs) Accounts() ([]common.Address, error) {
 		addresses[i] = account.Address
 	}
 	return addresses, nil
+}
+
+// Transfer initiates a value transfer from an origin account to a destination
+// account.
+func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (common.Hash, error) {
+	// Make sure we actually own the origin account and have a valid destination
+	accman := eapis.ethereum.AccountManager()
+	if !accman.HasAccount(from) {
+		return common.Hash{}, fmt.Errorf("unknown account: 0x%x", from.Bytes())
+	}
+	if to == (common.Address{}) {
+		return common.Hash{}, fmt.Errorf("missing destination account")
+	}
+	// Serialize transaction creations to avoid nonce clashes
+	eapis.txlock.Lock()
+	defer eapis.txlock.Unlock()
+
+	// Assemble and create the new transaction
+	var (
+		txpool   = eapis.ethereum.TxPool()
+		nonce    = txpool.State().GetNonce(from)
+		gasLimit = params.TxGas
+		gasPrice = eapis.ethereum.GpoMinGasPrice
+	)
+	tx := types.NewTransaction(nonce, to, amount, gasLimit, gasPrice, nil)
+
+	// Sign the transaction and inject into the local pool for propagation
+	signature, err := accman.Sign(accounts.Account{Address: from}, tx.SigHash().Bytes())
+	if err != nil {
+		return common.Hash{}, err
+	}
+	signed, err := tx.WithSignature(signature)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	txpool.SetLocal(signed)
+	if err := txpool.Add(signed); err != nil {
+		return common.Hash{}, err
+	}
+	return signed.Hash(), nil
+}
+
+// Geth retrieves the Ethereum client through which to interact with the underlying
+// peer-to-peer networking layer.
+func (eapis *EtherAPIs) Geth() *geth.Geth {
+	return eapis.client
+}
+
+// Ethereum retrieves the Ethereum protocol running within the connected client.
+func (eapis *EtherAPIs) Ethereum() *eth.Ethereum {
+	return eapis.ethereum
 }
 
 // Contract retrieves the Ether APIs Ethereum contract to access the consensus data.

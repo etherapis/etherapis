@@ -651,6 +651,9 @@ func (env *Work) commitTransactions(mux *event.TypeMux, transactions types.Trans
 	if len(coalescedLogs) > 0 {
 		go mux.Post(core.PendingLogsEvent{Logs: coalescedLogs})
 	}
+	if env.tcount > 0 {
+		go mux.Post(core.PendingStateEvent{State: env.state})
+	}
 }
 
 func (env *Work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, gp *core.GasPool) (error, vm.Logs) {

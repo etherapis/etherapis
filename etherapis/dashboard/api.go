@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"strings"
 
@@ -32,13 +33,11 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	}
 	// Register all the API handler endpoints
 	router := mux.NewRouter()
+	router.Handle(base, newStateServer(base, eapis))
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
-	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/{password:.+}", handler.AccountExport)
-	router.HandleFunc(base+"ethereum/peers", handler.PeerInfos)
-	router.HandleFunc(base+"ethereum/syncing", handler.SyncStatus)
-	router.HandleFunc(base+"ethereum/head", handler.HeadBlock)
+	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/transactions", handler.Transactions)
 	router.HandleFunc(base+"services/{addresses}", handler.Services)
 	router.HandleFunc(base+"services", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
@@ -119,22 +118,6 @@ func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
 // a new account is imported using the uploaded key file and access password.
 func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.Method == "GET":
-		// List the available accounts
-		accounts, err := a.eapis.Accounts()
-		if err != nil {
-			log15.Error("Failed to retrieve accounts", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		out, err := json.Marshal(accounts)
-		if err != nil {
-			log15.Error("Failed to marshal account list", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(out)
-
 	case r.Method == "POST" && r.FormValue("action") == "create":
 		// Create a brand new random account
 		address, err := a.eapis.CreateAccount()
@@ -177,8 +160,35 @@ func (a *api) Accounts(w http.ResponseWriter, r *http.Request) {
 func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	// Only reply for deletion requests and get request
+	// Only reply for deletion requests
 	switch r.Method {
+	case "GET":
+		// Make sure the user provided a password to export with
+		password := r.URL.Query().Get("password")
+		if password == "" {
+			log15.Error("Export with empty password denied", "address", params["address"])
+			http.Error(w, "password required to export account", http.StatusBadRequest)
+			return
+		}
+		// Export the key into a json key file and return and error if something goes wrong
+		key, err := a.eapis.ExportAccount(common.HexToAddress(params["address"]), password)
+		if err != nil {
+			log15.Error("Failed to export account", "address", params["address"], "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Pretty print the key json since the exporter sucks :P
+		pretty := new(bytes.Buffer)
+		if err := json.Indent(pretty, key, "", "  "); err != nil {
+			log15.Error("Failed to pretty print key", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Set the correct header to ensure download (i.e. no display) and dump the contents
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
+		w.Write(pretty.Bytes())
+
 	case "DELETE":
 		// Delete the account and return an error if something goes wrong
 		if err := a.eapis.DeleteAccount(common.HexToAddress(params["address"])); err != nil {
@@ -186,15 +196,7 @@ func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	case "GET":
-		out, err := json.Marshal(a.eapis.GetAccount(common.HexToAddress(params["address"])))
-		if err != nil {
-			log15.Error("Failed to marshal account", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 
-		w.Write(out)
 	default:
 		log15.Error("Invalid method on account endpoint", "method", r.Method)
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
@@ -202,63 +204,41 @@ func (a *api) Account(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AccountExport handles the request to export an account with a particular
-// password set.
-func (a *api) AccountExport(w http.ResponseWriter, r *http.Request) {
+// Transactions handles POST requests against an account endpoint to initiate
+// outbound value transfers to other accounts.
+func (a *api) Transactions(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	// Export the key into a json key file and return and error if something goes wrong
-	key, err := a.eapis.ExportAccount(common.HexToAddress(params["address"]), params["password"])
-	if err != nil {
-		log15.Error("Failed to export account", "address", params["address"], "error", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	// Pretty print the key json since the exporter sucks :P
-	pretty := new(bytes.Buffer)
-	if err := json.Indent(pretty, key, "", "  "); err != nil {
-		log15.Error("Failed to pretty print key", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Set the correct header to ensure download (i.e. no display) and dump the contents
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "inline; filename=\""+params["address"]+".json\"")
-	w.Write(pretty.Bytes())
-}
+	switch {
+	case r.Method == "POST":
+		// Parse and validate the transfer parameters
+		sender := common.HexToAddress(params["address"])
 
-// PeerInfos retrieves the currently connected peers and returns them in their
-// raw Ethereum API reply form.
-func (a *api) PeerInfos(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("admin_peers", nil)
-	if err != nil {
-		log15.Error("Failed to retrieve connected peers", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(reply)
-}
+		recipient := r.FormValue("recipient")
+		if !common.IsHexAddress(recipient) {
+			log15.Warn("Invalid recipient", "recipient", recipient)
+			http.Error(w, fmt.Sprintf("Invalid recipient: %s", recipient), http.StatusBadRequest)
+			return
+		}
+		to := common.HexToAddress(recipient)
 
-// SyncStatus retrieves the current sync status and returns it in its raw
-// Ethereum API reply form.
-func (a *api) SyncStatus(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("eth_syncing", nil)
-	if err != nil {
-		log15.Error("Failed to retrieve sync status", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(reply)
-}
+		amount := r.FormValue("amount")
+		value, ok := new(big.Int).SetString(amount, 10)
+		if !ok || value.Cmp(big.NewInt(0)) <= 0 {
+			log15.Warn("Invalid amount", "amount", amount)
+			http.Error(w, fmt.Sprintf("Invalid amount: %s", amount), http.StatusBadRequest)
+			return
+		}
+		// Execute the value transfer and return an error or the transaction id
+		id, err := a.eapis.Transfer(sender, to, value)
+		if err != nil {
+			log15.Error("Failed to execute transfer", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("0x%x", id)))
 
-// HeadBlock retrieves the current head block and returns it in its raw
-// Ethereum API reply form.
-func (a *api) HeadBlock(w http.ResponseWriter, r *http.Request) {
-	reply, err := a.eapis.CallRPC("eth_getBlockByNumber", []interface{}{"latest", false})
-	if err != nil {
-		log15.Error("Failed to retrieve head block", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	default:
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
 	}
-	w.Write(reply)
 }
