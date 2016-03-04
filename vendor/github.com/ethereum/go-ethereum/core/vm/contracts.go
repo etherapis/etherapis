@@ -93,7 +93,8 @@ func ecrecoverFunc(in []byte) []byte {
 	vbig := common.Bytes2Big(in[32:64])
 	v := byte(vbig.Uint64())
 
-	if !crypto.ValidateSignatureValues(v, r, s) {
+	// tighter sig s values in homestead only apply to tx sigs
+	if !crypto.ValidateSignatureValues(v, r, s, false) {
 		glog.V(logger.Debug).Infof("EC RECOVER FAIL: v, r or s value invalid")
 		return nil
 	}
@@ -110,7 +111,7 @@ func ecrecoverFunc(in []byte) []byte {
 	}
 
 	// the first byte of pubkey is bitcoin heritage
-	return common.LeftPadBytes(crypto.Sha3(pubKey[1:])[12:], 32)
+	return common.LeftPadBytes(crypto.Keccak256(pubKey[1:])[12:], 32)
 }
 
 func memCpy(in []byte) []byte {

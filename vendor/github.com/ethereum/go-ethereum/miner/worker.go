@@ -593,7 +593,8 @@ func (env *Work) commitTransactions(mux *event.TypeMux, transactions types.Trans
 
 	var coalescedLogs vm.Logs
 	for _, tx := range transactions {
-		// We can skip err. It has already been validated in the tx pool
+		// Error may be ignored here. The error has already been checked
+		// during transaction acceptance is the transaction pool.
 		from, _ := tx.From()
 
 		// Check if it falls within margin. Txs from owned accounts are always processed.
@@ -648,11 +649,15 @@ func (env *Work) commitTransactions(mux *event.TypeMux, transactions types.Trans
 			coalescedLogs = append(coalescedLogs, logs...)
 		}
 	}
-	if len(coalescedLogs) > 0 {
-		go mux.Post(core.PendingLogsEvent{Logs: coalescedLogs})
-	}
-	if env.tcount > 0 {
-		go mux.Post(core.PendingStateEvent{State: env.state})
+	if len(coalescedLogs) > 0 || env.tcount > 0 {
+		go func(logs vm.Logs, tcount int) {
+			if len(logs) > 0 {
+				mux.Post(core.PendingLogsEvent{Logs: logs})
+			}
+			if tcount > 0 {
+				mux.Post(core.PendingStateEvent{})
+			}
+		}(coalescedLogs, env.tcount)
 	}
 }
 

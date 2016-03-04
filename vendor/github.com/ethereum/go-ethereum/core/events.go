@@ -20,7 +20,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
@@ -37,9 +36,7 @@ type PendingLogsEvent struct {
 }
 
 // PendingStateEvent is posted pre mining and notifies of pending state changes.
-type PendingStateEvent struct {
-	State *state.StateDB
-}
+type PendingStateEvent struct{}
 
 // NewBlockEvent is posted when a block has been imported.
 type NewBlockEvent struct{ Block *types.Block }

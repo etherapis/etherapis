@@ -181,7 +181,7 @@ var (
 	GasPriceFlag = cli.StringFlag{
 		Name:  "gasprice",
 		Usage: "Minimal gas price to accept for mining a transactions",
-		Value: new(big.Int).Mul(big.NewInt(50), common.Shannon).String(),
+		Value: new(big.Int).Mul(big.NewInt(20), common.Shannon).String(),
 	}
 	ExtraDataFlag = cli.StringFlag{
 		Name:  "extradata",
@@ -350,7 +350,7 @@ var (
 	GpoMinGasPriceFlag = cli.StringFlag{
 		Name:  "gpomin",
 		Usage: "Minimum suggested gas price",
-		Value: new(big.Int).Mul(big.NewInt(50), common.Shannon).String(),
+		Value: new(big.Int).Mul(big.NewInt(20), common.Shannon).String(),
 	}
 	GpoMaxGasPriceFlag = cli.StringFlag{
 		Name:  "gpomax",
@@ -672,6 +672,8 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 			ethConf.Genesis = core.TestNetGenesisBlock()
 		}
 		state.StartingNonce = 1048576 // (2**20)
+		// overwrite homestead block
+		params.HomesteadBlock = params.TestNetHomesteadBlock
 
 	case ctx.GlobalBool(DevModeFlag.Name):
 		// Override the base network stack configs

@@ -30,7 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-var emptyCodeHash = crypto.Sha3(nil)
+var emptyCodeHash = crypto.Keccak256(nil)
 
 type Code []byte
 
@@ -225,7 +225,7 @@ func (self *StateObject) Code() []byte {
 
 func (self *StateObject) SetCode(code []byte) {
 	self.code = code
-	self.codeHash = crypto.Sha3(code)
+	self.codeHash = crypto.Keccak256(code)
 	self.dirty = true
 }
 
@@ -236,6 +236,13 @@ func (self *StateObject) SetNonce(nonce uint64) {
 
 func (self *StateObject) Nonce() uint64 {
 	return self.nonce
+}
+
+// Never called, but must be present to allow StateObject to be used
+// as a vm.Account interface that also satisfies the vm.ContractRef
+// interface. Interfaces are awesome.
+func (self *StateObject) Value() *big.Int {
+	panic("Value on StateObject should never be called")
 }
 
 func (self *StateObject) EachStorage(cb func(key, value []byte)) {

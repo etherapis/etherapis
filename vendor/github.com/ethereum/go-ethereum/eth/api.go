@@ -610,21 +610,22 @@ type callmsg struct {
 }
 
 // accessor boilerplate to implement core.Message
-func (m callmsg) From() (common.Address, error) { return m.from.Address(), nil }
-func (m callmsg) Nonce() uint64                 { return m.from.Nonce() }
-func (m callmsg) To() *common.Address           { return m.to }
-func (m callmsg) GasPrice() *big.Int            { return m.gasPrice }
-func (m callmsg) Gas() *big.Int                 { return m.gas }
-func (m callmsg) Value() *big.Int               { return m.value }
-func (m callmsg) Data() []byte                  { return m.data }
+func (m callmsg) From() (common.Address, error)         { return m.from.Address(), nil }
+func (m callmsg) FromFrontier() (common.Address, error) { return m.from.Address(), nil }
+func (m callmsg) Nonce() uint64                         { return m.from.Nonce() }
+func (m callmsg) To() *common.Address                   { return m.to }
+func (m callmsg) GasPrice() *big.Int                    { return m.gasPrice }
+func (m callmsg) Gas() *big.Int                         { return m.gas }
+func (m callmsg) Value() *big.Int                       { return m.value }
+func (m callmsg) Data() []byte                          { return m.data }
 
 type CallArgs struct {
-	From     common.Address `json:"from"`
-	To       common.Address `json:"to"`
-	Gas      rpc.HexNumber  `json:"gas"`
-	GasPrice rpc.HexNumber  `json:"gasPrice"`
-	Value    rpc.HexNumber  `json:"value"`
-	Data     string         `json:"data"`
+	From     common.Address  `json:"from"`
+	To       *common.Address `json:"to"`
+	Gas      rpc.HexNumber   `json:"gas"`
+	GasPrice rpc.HexNumber   `json:"gasPrice"`
+	Value    rpc.HexNumber   `json:"value"`
+	Data     string          `json:"data"`
 }
 
 func (s *PublicBlockChainAPI) doCall(args CallArgs, blockNr rpc.BlockNumber) (string, *big.Int, error) {
@@ -652,7 +653,7 @@ func (s *PublicBlockChainAPI) doCall(args CallArgs, blockNr rpc.BlockNumber) (st
 	// Assemble the CALL invocation
 	msg := callmsg{
 		from:     from,
-		to:       &args.To,
+		to:       args.To,
 		gas:      args.Gas.BigInt(),
 		gasPrice: args.GasPrice.BigInt(),
 		value:    args.Value.BigInt(),
@@ -664,6 +665,7 @@ func (s *PublicBlockChainAPI) doCall(args CallArgs, blockNr rpc.BlockNumber) (st
 	if msg.gasPrice.Cmp(common.Big0) == 0 {
 		msg.gasPrice = new(big.Int).Mul(big.NewInt(50), common.Shannon)
 	}
+
 	// Execute the call and return
 	vmenv := core.NewEnv(stateDb, s.bc, msg, block.Header())
 	gp := new(core.GasPool).AddGas(common.MaxBig)
@@ -761,7 +763,7 @@ type RPCTransaction struct {
 
 // newRPCPendingTransaction returns a pending transaction that will serialize to the RPC representation
 func newRPCPendingTransaction(tx *types.Transaction) *RPCTransaction {
-	from, _ := tx.From()
+	from, _ := tx.FromFrontier()
 
 	return &RPCTransaction{
 		From:     from,
@@ -779,7 +781,7 @@ func newRPCPendingTransaction(tx *types.Transaction) *RPCTransaction {
 func newRPCTransactionFromBlockIndex(b *types.Block, txIndex int) (*RPCTransaction, error) {
 	if txIndex >= 0 && txIndex < len(b.Transactions()) {
 		tx := b.Transactions()[txIndex]
-		from, err := tx.From()
+		from, err := tx.FromFrontier()
 		if err != nil {
 			return nil, err
 		}
@@ -969,7 +971,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (ma
 		return nil, nil
 	}
 
-	from, err := tx.From()
+	from, err := tx.FromFrontier()
 	if err != nil {
 		glog.V(logger.Debug).Infof("%v\n", err)
 		return nil, nil
@@ -1011,13 +1013,13 @@ func (s *PublicTransactionPoolAPI) sign(address common.Address, tx *types.Transa
 }
 
 type SendTxArgs struct {
-	From     common.Address `json:"from"`
-	To       common.Address `json:"to"`
-	Gas      *rpc.HexNumber `json:"gas"`
-	GasPrice *rpc.HexNumber `json:"gasPrice"`
-	Value    *rpc.HexNumber `json:"value"`
-	Data     string         `json:"data"`
-	Nonce    *rpc.HexNumber `json:"nonce"`
+	From     common.Address  `json:"from"`
+	To       *common.Address `json:"to"`
+	Gas      *rpc.HexNumber  `json:"gas"`
+	GasPrice *rpc.HexNumber  `json:"gasPrice"`
+	Value    *rpc.HexNumber  `json:"value"`
+	Data     string          `json:"data"`
+	Nonce    *rpc.HexNumber  `json:"nonce"`
 }
 
 // SendTransaction will create a transaction for the given transaction argument, sign it and submit it to the
@@ -1041,12 +1043,12 @@ func (s *PublicTransactionPoolAPI) SendTransaction(args SendTxArgs) (common.Hash
 	}
 
 	var tx *types.Transaction
-	contractCreation := (args.To == common.Address{})
+	contractCreation := (args.To == nil)
 
 	if contractCreation {
 		tx = types.NewContractCreation(args.Nonce.Uint64(), args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
 	} else {
-		tx = types.NewTransaction(args.Nonce.Uint64(), args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+		tx = types.NewTransaction(args.Nonce.Uint64(), *args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
 	}
 
 	signedTx, err := s.sign(args.From, tx)
@@ -1083,7 +1085,7 @@ func (s *PublicTransactionPoolAPI) SendRawTransaction(encodedTx string) (string,
 	}
 
 	if tx.To() == nil {
-		from, err := tx.From()
+		from, err := tx.FromFrontier()
 		if err != nil {
 			return "", err
 		}
@@ -1105,7 +1107,7 @@ func (s *PublicTransactionPoolAPI) Sign(address common.Address, data string) (st
 
 type SignTransactionArgs struct {
 	From     common.Address
-	To       common.Address
+	To       *common.Address
 	Nonce    *rpc.HexNumber
 	Value    *rpc.HexNumber
 	Gas      *rpc.HexNumber
@@ -1131,23 +1133,21 @@ type Tx struct {
 
 func (tx *Tx) UnmarshalJSON(b []byte) (err error) {
 	req := struct {
-		To       common.Address `json:"to"`
-		From     common.Address `json:"from"`
-		Nonce    *rpc.HexNumber `json:"nonce"`
-		Value    *rpc.HexNumber `json:"value"`
-		Data     string         `json:"data"`
-		GasLimit *rpc.HexNumber `json:"gas"`
-		GasPrice *rpc.HexNumber `json:"gasPrice"`
-		Hash     common.Hash    `json:"hash"`
+		To       *common.Address `json:"to"`
+		From     common.Address  `json:"from"`
+		Nonce    *rpc.HexNumber  `json:"nonce"`
+		Value    *rpc.HexNumber  `json:"value"`
+		Data     string          `json:"data"`
+		GasLimit *rpc.HexNumber  `json:"gas"`
+		GasPrice *rpc.HexNumber  `json:"gasPrice"`
+		Hash     common.Hash     `json:"hash"`
 	}{}
 
 	if err := json.Unmarshal(b, &req); err != nil {
 		return err
 	}
 
-	contractCreation := (req.To == (common.Address{}))
-
-	tx.To = &req.To
+	tx.To = req.To
 	tx.From = req.From
 	tx.Nonce = req.Nonce
 	tx.Value = req.Value
@@ -1171,12 +1171,10 @@ func (tx *Tx) UnmarshalJSON(b []byte) (err error) {
 		tx.GasPrice = rpc.NewHexNumber(int64(50000000000))
 	}
 
+	contractCreation := (req.To == nil)
 	if contractCreation {
 		tx.tx = types.NewContractCreation(tx.Nonce.Uint64(), tx.Value.BigInt(), tx.GasLimit.BigInt(), tx.GasPrice.BigInt(), data)
 	} else {
-		if tx.To == nil {
-			return fmt.Errorf("need to address")
-		}
 		tx.tx = types.NewTransaction(tx.Nonce.Uint64(), *tx.To, tx.Value.BigInt(), tx.GasLimit.BigInt(), tx.GasPrice.BigInt(), data)
 	}
 
@@ -1189,7 +1187,7 @@ type SignTransactionResult struct {
 }
 
 func newTx(t *types.Transaction) *Tx {
-	from, _ := t.From()
+	from, _ := t.FromFrontier()
 	return &Tx{
 		tx:       t,
 		To:       t.To(),
@@ -1225,12 +1223,12 @@ func (s *PublicTransactionPoolAPI) SignTransaction(args *SignTransactionArgs) (*
 	}
 
 	var tx *types.Transaction
-	contractCreation := (args.To == common.Address{})
+	contractCreation := (args.To == nil)
 
 	if contractCreation {
 		tx = types.NewContractCreation(args.Nonce.Uint64(), args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
 	} else {
-		tx = types.NewTransaction(args.Nonce.Uint64(), args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+		tx = types.NewTransaction(args.Nonce.Uint64(), *args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
 	}
 
 	signedTx, err := s.sign(args.From, tx)
@@ -1262,7 +1260,7 @@ func (s *PublicTransactionPoolAPI) PendingTransactions() ([]*RPCTransaction, err
 	pending := s.txPool.GetTransactions()
 	transactions := make([]*RPCTransaction, 0)
 	for _, tx := range pending {
-		if from, _ := tx.From(); accountSet.Has(from) {
+		if from, _ := tx.FromFrontier(); accountSet.Has(from) {
 			transactions = append(transactions, newRPCPendingTransaction(tx))
 		}
 	}
@@ -1297,7 +1295,7 @@ func (s *PublicTransactionPoolAPI) NewPendingTransactions() (rpc.Subscription, e
 		}
 
 		tx := transaction.(core.TxPreEvent)
-		if from, err := tx.Tx.From(); err == nil {
+		if from, err := tx.Tx.FromFrontier(); err == nil {
 			if accountSet.Has(from) {
 				return tx.Tx.Hash()
 			}
@@ -1314,7 +1312,7 @@ func (s *PublicTransactionPoolAPI) Resend(tx *Tx, gasPrice, gasLimit *rpc.HexNum
 
 	pending := s.txPool.GetTransactions()
 	for _, p := range pending {
-		if pFrom, err := p.From(); err == nil && pFrom == tx.From && p.SigHash() == tx.tx.SigHash() {
+		if pFrom, err := p.FromFrontier(); err == nil && pFrom == tx.From && p.SigHash() == tx.tx.SigHash() {
 			if gasPrice == nil {
 				gasPrice = rpc.NewHexNumber(tx.tx.GasPrice())
 			}
@@ -1323,7 +1321,7 @@ func (s *PublicTransactionPoolAPI) Resend(tx *Tx, gasPrice, gasLimit *rpc.HexNum
 			}
 
 			var newTx *types.Transaction
-			contractCreation := (*tx.tx.To() == common.Address{})
+			contractCreation := (tx.tx.To() == nil)
 			if contractCreation {
 				newTx = types.NewContractCreation(tx.tx.Nonce(), tx.tx.Value(), gasPrice.BigInt(), gasLimit.BigInt(), tx.tx.Data())
 			} else {
@@ -1588,7 +1586,7 @@ func (s *PrivateDebugAPI) doReplayTransaction(txHash common.Hash) ([]vm.StructLo
 		return nil, nil, nil, err
 	}
 
-	txFrom, err := tx.From()
+	txFrom, err := tx.FromFrontier()
 
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("Unable to create transaction sender")
