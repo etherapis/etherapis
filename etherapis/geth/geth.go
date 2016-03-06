@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // Geth is a wrapper around the Ethereum Go client.
@@ -67,6 +68,7 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 		ethConf.NetworkId = 2
 		ethConf.Genesis = core.TestNetGenesisBlock()
 		state.StartingNonce = 1048576 // (2**20)
+		params.HomesteadBlock = params.TestNetHomesteadBlock
 	}
 	// Assemble and return the protocol stack
 	stack, err := node.New(stackConf)

@@ -16,7 +16,15 @@ var EthereumUnits = {
 // formatBalance takes a textual representation of an account balance in Wei and
 // formats it into a use friendlier display string.
 function formatBalance(balance) {
-	var balance = String(balance);
+	if (typeof balance !== 'string' && !(balance instanceof String)) {
+		var exp = parseInt(balance.toString().split('+')[1]);
+		if (exp > 20) {
+			exp -= 20;
+			balance /= Math.pow(10,exp);
+			balance += (new Array(exp + 1)).join('0');
+		}
+		balance = String(balance);
+	}
 	if (balance == "0") {
 		return balance + " " + EthereumUnits[7];
 	}
