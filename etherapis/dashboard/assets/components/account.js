@@ -12,17 +12,16 @@ var Accounts = React.createClass({
 		for (var i=0; i<addresses.length; i+=2) {
 			pairs.push({first: addresses[i], second: addresses[i+1]});
 		}
-		if (addresses.length == 0) {
-			return null;
-		}
 
 		return (
 			<div>
-				<div className="row">
-					<div className="col-lg-12">
-						<h3>My accounts</h3>
+				{ pairs.length == 0 ? null :
+					<div className="row">
+						<div className="col-lg-12">
+							<h3>My accounts</h3>
+						</div>
 					</div>
-				</div>
+				}
 				{
 					pairs.map(function(pair) {
 						return (
