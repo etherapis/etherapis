@@ -236,9 +236,14 @@ var TransferFunds = React.createClass({
 		return (
 			<div>
 				<hr/>
+				<p>
+					Transferring funds incurs a small network fee deducted from your account to cover the	cost of the transaction
+					and may take up to a minute to process. Please ensure you input the <strong>correct recipient</strong>, as all
+					transactions are final and non-reversible!
+				</p>
 				<div className="form-group">
 					<div className="input-group pull-right" style={{width: "30%"}}>
-			      <input type="text" className="form-control" value={this.state.amount} onChange={this.updateAmount}/>
+			      <input type="text" className="form-control" placeholder="Amount" value={this.state.amount} onChange={this.updateAmount}/>
 			      <div className="input-group-btn">
 			        <button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.unit} <span className="caret"></span></button>
 			        <ul className="dropdown-menu dropdown-menu-right">
