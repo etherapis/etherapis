@@ -43,11 +43,11 @@ var Dashboard = React.createClass({
 		}.bind(this), 1000);
 	},
 
-	loadIndex:			function() { this.setState({section: "index"}); },
-	loadProvider:	 function() { this.setState({section: "provider"}); },
+	loadIndex:      function() { this.setState({section: "index"}); },
+	loadAccount:    function() { this.setState({section: "account"}); },
+	loadProvider:   function() { this.setState({section: "provider"}); },
 	loadSubscriber: function() { this.setState({section: "subscriber"}); },
-	loadMarket:		 function() { this.setState({section: "market"}); },
-	loadAccount:		function() { this.setState({section: "account"}); },
+	loadMarket:     function() { this.setState({section: "market"}); },
 
 	// switchAccount switches out the currently active account to the one specified.
 	switchAccount: function(address) {
@@ -99,7 +99,7 @@ var Dashboard = React.createClass({
 
 					<Tutorial hide={this.state.section != "index"}/>
 					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"	} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
-					<Provider hide={this.state.section != "provider"} apiurl={this.props.apiurl + "/services"} accounts={this.state.server} active={this.state.account} services={this.state.server.services}/>
+					<Provider hide={this.state.section != "provider"} apiurl={this.props.apiurl + "/services"} accounts={this.state.server} active={this.state.account} services={this.state.server.services} loadaccs={this.loadAccount}/>
 					<Subscriber hide={this.state.section != "subscriber"}/>
 					<Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>
 					<div style={{height: this.state.footer}}></div>
