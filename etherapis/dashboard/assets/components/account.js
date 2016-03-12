@@ -95,8 +95,7 @@ var Account = React.createClass({
 		return (
 			<div className={this.props.address == this.props.active && this.props.switch != null ? "panel panel-success" : "panel panel-default"}>
 				<div className="panel-heading">
-					<img style={{borderRadius: "50%", marginRight: "8px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
-					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>{this.props.address == this.props.active && this.props.switch != null ? " – Active" : null}
+					<Address address={this.props.address}/>{this.props.address == this.props.active && this.props.switch != null ? " – Active" : null}
 					<a href={this.props.explorer + "address/" + this.props.address} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
 				</div>
 				<div className="panel-body">
@@ -160,6 +159,29 @@ var Account = React.createClass({
 		);
 	}
 });
+
+// Address is a user friendly formatted accound address, monospaced and tagged
+// with the blockies avatar.
+var Address = React.createClass({
+	render: function() {
+		if (this.props.small) {
+			return (
+				<small>
+					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 1}).toDataURL()}/>
+					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>
+				</small>
+			);
+		} else {
+			return (
+				<span>
+					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
+					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>
+				</span>
+			);
+		}
+	}
+});
+window.Address = Address // Expose the component
 
 // TransferFunds can be used to transfer funds from one account to another, either
 // local or external.

@@ -167,8 +167,8 @@ type Transaction struct {
 	Fees   *big.Int       `json:"fees"`
 }
 
-// GetAccount returns the data associated with the account.
-func (eapis *EtherAPIs) GetAccount(account common.Address) Account {
+// Account returns the data associated with the account.
+func (eapis *EtherAPIs) Account(account common.Address) Account {
 	state, _ := eapis.ethereum.BlockChain().State()
 	pending := eapis.ethereum.Miner().PendingState()
 
@@ -244,6 +244,29 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 		return common.Hash{}, err
 	}
 	return signed.Hash(), nil
+}
+
+// Services retrieves a map of locally owned services, grouped by owner account.
+func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error) {
+	// Fetch all the accounts owned by this node
+	addresses, err := eapis.Accounts()
+	if err != nil {
+		return nil, err
+	}
+	// For each address, retrieves all the registered services
+	services := make(map[common.Address][]contract.Service)
+	for _, address := range addresses {
+		services[address], err = eapis.contract.Services(address)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Temp add all services for the UI work
+	services[common.Address{}], err = eapis.contract.AllServices()
+	if err != nil {
+		return nil, err
+	}
+	return services, nil
 }
 
 // Geth retrieves the Ethereum client through which to interact with the underlying

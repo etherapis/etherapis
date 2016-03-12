@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/etherapis/etherapis/etherapis"
+	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/downloader"
@@ -35,6 +36,8 @@ type state struct {
 		Head    *types.Header        // Current head of the local Ethereum blockchain
 		Syncing *downloader.Progress // Sync progress as reported by the Ethereum downloader
 	}
+	// Services contains all the known information about registered APIs
+	Services map[string][]contract.Service
 }
 
 // Apply injects a state diff into the current state. If the diff specifies a
@@ -118,10 +121,9 @@ func (server *stateServer) start() {
 
 	// Assemble the initial state
 	accounts, _ := server.eapis.Accounts()
-
 	server.state.Accounts = make(map[string]etherapis.Account)
 	for _, account := range accounts {
-		server.state.Accounts[account.Hex()] = server.eapis.GetAccount(account)
+		server.state.Accounts[account.Hex()] = server.eapis.Account(account)
 	}
 	server.state.Ethereum.Self = node.Server().NodeInfo()
 	server.state.Ethereum.Head = eth.BlockChain().CurrentBlock().Header()
@@ -130,6 +132,11 @@ func (server *stateServer) start() {
 	origin, current, height, pulled, known := eth.Downloader().Progress()
 	server.state.Ethereum.Syncing = &downloader.Progress{origin, current, height, pulled, known}
 
+	services, _ := server.eapis.Services()
+	server.state.Services = make(map[string][]contract.Service)
+	for account, service := range services {
+		server.state.Services[account.Hex()] = service
+	}
 	// Register any event listeners
 	go server.loop()
 }
@@ -150,10 +157,19 @@ func (server *stateServer) loop() {
 		addresses, _ := server.eapis.Accounts()
 		for _, address := range addresses {
 			previous := server.state.Accounts[address.Hex()]
-			current := server.eapis.GetAccount(address)
+			current := server.eapis.Account(address)
 
 			if previous.Balance != current.Balance || previous.Change != current.Change {
 				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"accounts", address.Hex()}, Node: current})
+			}
+		}
+	}
+	// Quick hack helper method to check for service updates
+	updateServices := func(update *stateUpdate) {
+		all, _ := server.eapis.Services()
+		for address, services := range all {
+			if !reflect.DeepEqual(services, server.state.Services[address.Hex()]) {
+				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"services", address.Hex()}, Node: services})
 			}
 		}
 	}
@@ -187,19 +203,22 @@ func (server *stateServer) loop() {
 					{Path: []string{"ethereum", "head"}, Node: head.Header()},
 				}...)
 				updateAccounts(update)
+				updateServices(update)
 
 			case core.PendingStateEvent:
 				// The pending state of the system changed, check if we need to update accounts
 				logger.Info("Pending state changed, checking accounts")
 				updateAccounts(update)
+				updateServices(update)
 
 			case etherapis.NewAccountEvent:
 				// A new account was created, push it out to the dashboard
 				logger.Debug("New account created/imported", "address", event.Address.Hex())
 
 				update.Diffs = append(update.Diffs, []stateDiff{
-					{Path: []string{"accounts", event.Address.Hex()}, Node: server.eapis.GetAccount(event.Address)},
+					{Path: []string{"accounts", event.Address.Hex()}, Node: server.eapis.Account(event.Address)},
 				}...)
+				updateServices(update)
 
 			case etherapis.DroppedAccountEvent:
 				// An existing account was deleted, remove it from any dahsboards
@@ -207,6 +226,7 @@ func (server *stateServer) loop() {
 
 				update.Diffs = append(update.Diffs, []stateDiff{
 					{Path: []string{"accounts", event.Address.Hex()}, Node: nil},
+					{Path: []string{"services", event.Address.Hex()}, Node: nil},
 				}...)
 
 			default:
