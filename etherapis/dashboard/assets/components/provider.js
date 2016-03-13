@@ -42,7 +42,7 @@ var Provider = React.createClass({
 						)
 					}.bind(this))
 				}
-				<ServiceCreator addresses={addresses} active={this.props.active} loadaccs={this.props.loadaccs}/>
+				<ServiceCreator apiurl={this.props.apiurl} addresses={addresses} active={this.props.active} loadaccs={this.props.loadaccs} switch={this.props.switch}/>
 			</div>
 		);
 	}
@@ -98,10 +98,70 @@ var Service = React.createClass({
 
 // ServiceCreator is a UI component for generating a brand new pristine service.
 var ServiceCreator = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			public:   true,
+			name:     "",
+			endpoint: "",
+			payment:  "call",
+			price:    "",
+			denom:    EthereumUnits[4],
+			cancel:   "",
+			scale:    "Seconds",
+			progress: false,
+			failure:  null,
+		};
+	},
 	// loadAccounts navigates to the accounts page.
 	loadAccounts: function(event) {
 		event.preventDefault();
 		this.props.loadaccs();
+	},
+	// the method set below pulls in the users modifications from the input boxes
+	// and updates the UIs internal state with it.
+	updatePublic:   function(event) {
+		if (event.target.checked) {
+			this.setState({public: true});
+		} else {
+			this.setState({public: false, name: "", endpoint: ""});
+		}
+	},
+	updateName:     function(event) { this.setState({name: event.target.value}); },
+	updateEndpoint: function(event) { this.setState({endpoint: event.target.value}); },
+	updatePrice:    function(event) { this.setState({price: event.target.value}); },
+	updateCancel:   function(event) { this.setState({cancel: event.target.value}); },
+
+	updateDenom: function(event) {
+		event.preventDefault();
+		this.setState({denom: event.target.textContent});
+	},
+	updateScale: function(event) {
+		event.preventDefault();
+		this.setState({scale: event.target.textContent});
+	},
+	// registerService executes the actual service registration.
+	registerService: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
+		this.setState({progress: true});
+
+		// Assemble and send the value transfer request
+		var form = new FormData();
+		form.append("name", this.state.name);
+		form.append("url", this.state.endpoint);
+		form.append("price", weiAmount(this.state.price, this.state.denom));
+		form.append("cancel", secondsDuration(this.state.cancel, this.state.scale));
+
+		$.ajax({type: "POST", url: this.props.apiurl + "/" + this.props.active, cache: false, data: form, processData: false, contentType: false,
+			success: function(data) {
+				this.setState(this.getInitialState());
+			}.bind(this),
+			error: function(xhr, status, err) {
+				this.setState({progress: false, failure: xhr.responseText});
+			}.bind(this),
+		});
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
@@ -123,6 +183,13 @@ var ServiceCreator = React.createClass({
 				</div>
 			);
 		}
+		// Create an account switcher
+		var switcher = function(address) {
+			return function(event) {
+				event.preventDefault();
+				this.props.switch(address);
+			}.bind(this)
+		}.bind(this)
 		// Otherwise display the service creation form
 		return (
 			<div className="row">
@@ -135,7 +202,7 @@ var ServiceCreator = React.createClass({
 						payment are specified (to be enforcable via Ether APIs), leaving it to the owner to provide the accessability
 						information to select customers.
 					</p>
-					<form className="form-horizontal well" style={{margintBottom: 0}}>
+					<form className="form-horizontal well">
 						<div className="col-lg-6">
 							<div className="form-group">
 								<label className="col-lg-2 control-label">Provider</label>
@@ -145,8 +212,8 @@ var ServiceCreator = React.createClass({
 									</button>
 									<ul className="dropdown-menu"> {
 										this.props.addresses.map(function(address) {
-											return (<li key={address}><a href="#"><Address address={address}/></a></li>);
-										})
+											return (<li key={address}><a href="#" onClick={switcher(address)}><Address address={address}/></a></li>);
+										}.bind(this))
 									} </ul>
 								</div>
 							</div>
@@ -154,20 +221,20 @@ var ServiceCreator = React.createClass({
 								<label className="col-lg-2 control-label">Public</label>
 								<div className="col-lg-10">
 									<div className="checkbox">
-										<label><input type="checkbox" defaultChecked/> Advertise marketplace availability</label>
+										<label><input type="checkbox" defaultChecked={this.state.public} onChange={this.updatePublic}/> Advertise marketplace availability</label>
 									</div>
 								</div>
 							</div>
 							<div className="form-group">
 								<label className="col-lg-2 control-label">Name</label>
 								<div className="col-lg-10">
-									<input type="text" className="form-control" placeholder="Public name"/>
+									<input type="text" className="form-control" disabled={!this.state.public} placeholder={this.state.public ? "Public name" : "Private services cannot advertise name"} value={this.state.name} onChange={this.updateName}/>
 								</div>
 							</div>
 							<div className="form-group">
 								<label className="col-lg-2 control-label">Endpoint</label>
 								<div className="col-lg-10">
-									<input type="text" className="form-control" placeholder="Public endpoint"/>
+									<input type="text" className="form-control" disabled={!this.state.public} placeholder={this.state.public ? "Public endpoint" : "Private services cannot advertise endpoint"} value={this.state.endpoint} onChange={this.updateEndpoint}/>
 								</div>
 							</div>
 						</div>
@@ -199,15 +266,15 @@ var ServiceCreator = React.createClass({
 								<label className="col-lg-2 control-label">Price</label>
 								<div className="col-lg-10">
 									<div className="input-group pull-right">
-										<input type="text" className="form-control" value={1} onChange={this.updateAmount}/>
+										<input type="text" className="form-control" placeholder="Unit price" value={this.state.price} onChange={this.updatePrice}/>
 										<div className="input-group-btn">
-											<button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{EthereumUnits[7]} <span className="caret"></span></button>
+											<button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.denom} <span className="caret"></span></button>
 											<ul className="dropdown-menu dropdown-menu-right">
-												<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[7]}</a></li>
-												<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[6]}</a></li>
-												<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[5]}</a></li>
-												<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[4]}</a></li>
-												<li><a href="#" onClick={this.updateUnit}>{EthereumUnits[1]}</a></li>
+												<li><a href="#" onClick={this.updateDenom}>{EthereumUnits[7]}</a></li>
+												<li><a href="#" onClick={this.updateDenom}>{EthereumUnits[6]}</a></li>
+												<li><a href="#" onClick={this.updateDenom}>{EthereumUnits[5]}</a></li>
+												<li><a href="#" onClick={this.updateDenom}>{EthereumUnits[4]}</a></li>
+												<li><a href="#" onClick={this.updateDenom}>{EthereumUnits[1]}</a></li>
 											</ul>
 										</div>
 									</div>
@@ -217,14 +284,14 @@ var ServiceCreator = React.createClass({
 								<label className="col-lg-2 control-label">Lockin</label>
 								<div className="col-lg-10">
 									<div className="input-group pull-right">
-										<input type="text" className="form-control" value={1} onChange={this.updateAmount}/>
+										<input type="text" className="form-control" placeholder="Cancellation time" value={this.state.time} onChange={this.updateCancel}/>
 										<div className="input-group-btn">
-											<button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Seconds <span className="caret"></span></button>
+											<button type="button" className="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{this.state.scale} <span className="caret"></span></button>
 											<ul className="dropdown-menu dropdown-menu-right">
-												<li><a href="#" onClick={this.updateUnit}>Seconds</a></li>
-												<li><a href="#" onClick={this.updateUnit}>Minutes</a></li>
-												<li><a href="#" onClick={this.updateUnit}>Hours</a></li>
-												<li><a href="#" onClick={this.updateUnit}>Days</a></li>
+												<li><a href="#" onClick={this.updateScale}>Seconds</a></li>
+												<li><a href="#" onClick={this.updateScale}>Minutes</a></li>
+												<li><a href="#" onClick={this.updateScale}>Hours</a></li>
+												<li><a href="#" onClick={this.updateScale}>Days</a></li>
 											</ul>
 										</div>
 									</div>
@@ -233,9 +300,12 @@ var ServiceCreator = React.createClass({
 						</div>
 						<div className="form-group" style={{marginBottom: 0}}>
 							<div className="col-lg-2 col-lg-offset-5">
-								<button type="submit" className="btn btn-default" style={{width: "100%"}}>Register service</button>
+								<a href="#" className={"btn btn-default " + ((this.state.public && (this.state.name == "" || this.state.endpoint == "")) || this.state.price == "" || this.state.cancel == "" ? "disabled" : "")} style={{width: "100%"}}  onClick={this.registerService}>
+									{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Register service
+								</a>
 							</div>
 						</div>
+						{ this.state.failure ? <div style={{textAlign: "center"}}><p className="text-danger">Failed to register service: {this.state.failure}</p></div> : null }
 					</form>
 				</div>
 			</div>

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -35,6 +36,7 @@ type signFn func(*types.Transaction) (*types.Transaction, error)
 type Contract struct {
 	abi        abi.ABI
 	blockchain *core.BlockChain
+	signer     *accounts.Manager
 
 	filters *filters.FilterSystem
 	mux     *event.TypeMux
@@ -51,9 +53,10 @@ type Contract struct {
 
 // New initialises a new abi and returns the contract. It does not
 // deploy the contract, hence the name.
-func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, callState func() *state.StateDB) (*Contract, error) {
+func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, signer *accounts.Manager, callState func() *state.StateDB) (*Contract, error) {
 	contract := Contract{
 		blockchain: blockchain,
+		signer:     signer,
 		subs:       make(map[common.Hash]*Subscription),
 		filters:    filters.NewFilterSystem(mux),
 		callState:  callState,
@@ -267,6 +270,31 @@ func (c *Contract) Subscribe(key *ecdsa.PrivateKey, serviceId *big.Int, amount, 
 	c.filters.Add(filter, filters.PendingLogFilter)
 
 	return transaction, nil
+}
+
+// AddService registers a new service into the contract.
+func (c *Contract) AddService(owner common.Address, name, url string, price *big.Int, cancel uint64) (*types.Transaction, error) {
+	// Create the transaction to register a new service into the contract
+	data, err := c.abi.Pack("addService", name, url, price, cancel)
+	if err != nil {
+		return nil, err
+	}
+	statedb, err := c.blockchain.State()
+	if err != nil {
+		return nil, err
+	}
+	tx := types.NewTransaction(statedb.GetNonce(owner), contractAddress, new(big.Int), big.NewInt(600000), big.NewInt(50000000000), data)
+
+	// Authorize the transaction with the requested account
+	signature, err := c.signer.Sign(accounts.Account{Address: owner}, tx.SigHash().Bytes())
+	if err != nil {
+		return nil, err
+	}
+	signed, err := tx.WithSignature(signature)
+	if err != nil {
+		return nil, err
+	}
+	return signed, nil
 }
 
 // Services returns the services associated with the given account in addr.

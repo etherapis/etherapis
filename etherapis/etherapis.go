@@ -52,7 +52,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		return nil, err
 	}
 	// Assemble an interface around the consensus contract
-	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.Miner().PendingState)
+	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.AccountManager(), ethereum.Miner().PendingState)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +167,8 @@ type Transaction struct {
 	Fees   *big.Int       `json:"fees"`
 }
 
-// Account returns the data associated with the account.
-func (eapis *EtherAPIs) Account(account common.Address) Account {
+// RetrieveAccount returns the data associated with the account.
+func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	state, _ := eapis.ethereum.BlockChain().State()
 	pending := eapis.ethereum.Miner().PendingState()
 
@@ -193,8 +193,8 @@ func (eapis *EtherAPIs) Account(account common.Address) Account {
 	}
 }
 
-// Accounts retrieves the list of accounts known to etherapis.
-func (eapis *EtherAPIs) Accounts() ([]common.Address, error) {
+// ListAccounts retrieves the list of accounts known to etherapis.
+func (eapis *EtherAPIs) ListAccounts() ([]common.Address, error) {
 	accounts, err := eapis.ethereum.AccountManager().Accounts()
 	if err != nil {
 		return nil, err
@@ -246,10 +246,22 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 	return signed.Hash(), nil
 }
 
+// CreateService registers a new service into the API marketplace.
+func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, price *big.Int, cancel uint64) (*types.Transaction, error) {
+	tx, err := eapis.contract.AddService(owner, name, url, price, cancel)
+	if err != nil {
+		return nil, err
+	}
+	if err := eapis.Ethereum().TxPool().Add(tx); err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
 // Services retrieves a map of locally owned services, grouped by owner account.
 func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error) {
 	// Fetch all the accounts owned by this node
-	addresses, err := eapis.Accounts()
+	addresses, err := eapis.ListAccounts()
 	if err != nil {
 		return nil, err
 	}
@@ -260,11 +272,6 @@ func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error
 		if err != nil {
 			return nil, err
 		}
-	}
-	// Temp add all services for the UI work
-	services[common.Address{}], err = eapis.contract.AllServices()
-	if err != nil {
-		return nil, err
 	}
 	return services, nil
 }

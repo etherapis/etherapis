@@ -120,10 +120,10 @@ func (server *stateServer) start() {
 	eth := server.eapis.Ethereum()
 
 	// Assemble the initial state
-	accounts, _ := server.eapis.Accounts()
+	accounts, _ := server.eapis.ListAccounts()
 	server.state.Accounts = make(map[string]etherapis.Account)
 	for _, account := range accounts {
-		server.state.Accounts[account.Hex()] = server.eapis.Account(account)
+		server.state.Accounts[account.Hex()] = server.eapis.RetrieveAccount(account)
 	}
 	server.state.Ethereum.Self = node.Server().NodeInfo()
 	server.state.Ethereum.Head = eth.BlockChain().CurrentBlock().Header()
@@ -154,10 +154,10 @@ func (server *stateServer) loop() {
 
 	// Quick hack helper method to check for account updates
 	updateAccounts := func(update *stateUpdate) {
-		addresses, _ := server.eapis.Accounts()
+		addresses, _ := server.eapis.ListAccounts()
 		for _, address := range addresses {
 			previous := server.state.Accounts[address.Hex()]
-			current := server.eapis.Account(address)
+			current := server.eapis.RetrieveAccount(address)
 
 			if previous.Balance != current.Balance || previous.Change != current.Change {
 				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"accounts", address.Hex()}, Node: current})
@@ -216,7 +216,7 @@ func (server *stateServer) loop() {
 				logger.Debug("New account created/imported", "address", event.Address.Hex())
 
 				update.Diffs = append(update.Diffs, []stateDiff{
-					{Path: []string{"accounts", event.Address.Hex()}, Node: server.eapis.Account(event.Address)},
+					{Path: []string{"accounts", event.Address.Hex()}, Node: server.eapis.RetrieveAccount(event.Address)},
 				}...)
 				updateServices(update)
 

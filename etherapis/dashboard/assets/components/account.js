@@ -167,7 +167,7 @@ var Address = React.createClass({
 		if (this.props.small) {
 			return (
 				<small>
-					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 1}).toDataURL()}/>
+					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 1.5}).toDataURL()}/>
 					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>
 				</small>
 			);
