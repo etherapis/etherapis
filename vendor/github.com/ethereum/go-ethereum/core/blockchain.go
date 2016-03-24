@@ -84,11 +84,11 @@ type BlockChain struct {
 	chainDb      ethdb.Database
 	eventMux     *event.TypeMux
 	genesisBlock *types.Block
+	vmConfig     *vm.Config
 
-	mu      sync.RWMutex
-	chainmu sync.RWMutex
-	tsmu    sync.RWMutex
-	procmu  sync.RWMutex
+	mu      sync.RWMutex // global mutex for locking chain operations
+	chainmu sync.RWMutex // blockchain insertion lock
+	procmu  sync.RWMutex // block processor lock
 
 	checkpoint       int          // checkpoint counts towards the new checkpoint
 	currentBlock     *types.Block // Current head of the block chain
@@ -99,15 +99,15 @@ type BlockChain struct {
 	blockCache   *lru.Cache // Cache for the most recent entire blocks
 	futureBlocks *lru.Cache // future blocks are blocks added for later processing
 
-	quit    chan struct{}
-	running int32 // running must be called automically
+	quit    chan struct{} // blockchain quit channel
+	running int32         // running must be called atomically
 	// procInterrupt must be atomically called
-	procInterrupt int32 // interrupt signaler for block processing
-	wg            sync.WaitGroup
+	procInterrupt int32          // interrupt signaler for block processing
+	wg            sync.WaitGroup // chain processing wait group for shutting down
 
 	pow       pow.PoW
-	processor Processor
-	validator Validator
+	processor Processor // block processor interface
+	validator Validator // block and state validator interface
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -161,6 +161,10 @@ func NewBlockChain(chainDb ethdb.Database, pow pow.PoW, mux *event.TypeMux) (*Bl
 	// Take ownership of this particular state
 	go bc.update()
 	return bc, nil
+}
+
+func (self *BlockChain) SetConfig(vmConfig *vm.Config) {
+	self.vmConfig = vmConfig
 }
 
 func (self *BlockChain) getProcInterrupt() bool {
@@ -567,10 +571,11 @@ func (bc *BlockChain) Stop() {
 }
 
 func (self *BlockChain) procFutureBlocks() {
-	blocks := make([]*types.Block, self.futureBlocks.Len())
-	for i, hash := range self.futureBlocks.Keys() {
-		block, _ := self.futureBlocks.Get(hash)
-		blocks[i] = block.(*types.Block)
+	blocks := make([]*types.Block, 0, self.futureBlocks.Len())
+	for _, hash := range self.futureBlocks.Keys() {
+		if block, exist := self.futureBlocks.Get(hash); exist {
+			blocks = append(blocks, block.(*types.Block))
+		}
 	}
 	if len(blocks) > 0 {
 		types.BlockBy(types.Number).Sort(blocks)
@@ -775,7 +780,7 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 	// Second clause in the if statement reduces the vulnerability to selfish mining.
 	// Please refer to http://www.cs.cornell.edu/~ie53/publications/btcProcFC.pdf
 	if externTd.Cmp(localTd) > 0 || (externTd.Cmp(localTd) == 0 && mrand.Float64() < 0.5) {
-		// Reorganize the chain if the parent is not the head block
+		// Reorganise the chain if the parent is not the head block
 		if block.ParentHash() != self.currentBlock.Hash() {
 			if err := self.reorg(self.currentBlock, block); err != nil {
 				return NonStatTy, err
@@ -792,8 +797,9 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 		glog.Fatalf("failed to write block total difficulty: %v", err)
 	}
 	if err := WriteBlock(self.chainDb, block); err != nil {
-		glog.Fatalf("filed to write block contents: %v", err)
+		glog.Fatalf("failed to write block contents: %v", err)
 	}
+
 	self.futureBlocks.Remove(block.Hash())
 
 	return
@@ -890,7 +896,7 @@ func (self *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 			return i, err
 		}
 		// Process block using the parent state as reference point.
-		receipts, logs, usedGas, err := self.processor.Process(block, statedb)
+		receipts, logs, usedGas, err := self.processor.Process(block, statedb, self.vmConfig)
 		if err != nil {
 			reportBlock(block, err)
 			return i, err
@@ -1133,7 +1139,7 @@ func reportBlock(block *types.Block, err error) {
 //
 // The verify parameter can be used to fine tune whether nonce verification
 // should be done or not. The reason behind the optional check is because some
-// of the header retrieval mechanisms already need to verfy nonces, as well as
+// of the header retrieval mechanisms already need to verify nonces, as well as
 // because nonces can be verified sparsely, not needing to check each.
 func (self *BlockChain) InsertHeaderChain(chain []*types.Header, checkFreq int) (int, error) {
 	// Make sure only one thread manipulates the chain at once

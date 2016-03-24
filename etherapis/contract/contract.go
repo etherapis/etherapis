@@ -48,12 +48,12 @@ type Contract struct {
 	// call key is a temporary key used to do calls
 	callKey   *ecdsa.PrivateKey
 	callMu    sync.Mutex
-	callState func() *state.StateDB
+	callState func() (*types.Block, *state.StateDB)
 }
 
 // New initialises a new abi and returns the contract. It does not
 // deploy the contract, hence the name.
-func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, signer *accounts.Manager, callState func() *state.StateDB) (*Contract, error) {
+func New(db ethdb.Database, mux *event.TypeMux, blockchain *core.BlockChain, signer *accounts.Manager, callState func() (*types.Block, *state.StateDB)) (*Contract, error) {
 	contract := Contract{
 		blockchain: blockchain,
 		signer:     signer,
@@ -189,7 +189,11 @@ func (c *Contract) Claim(signer common.Address, from common.Address, serviceId *
 // Call returns an error if the ABI failed parsing the input or if no method is
 // present.
 func (c *Contract) Call(r interface{}, method string, v ...interface{}) error {
-	return c.abi.Call(c.exec, r, method, v...)
+	data, err := c.abi.Pack(method, v...)
+	if err != nil {
+		return err
+	}
+	return c.abi.Unpack(r, method, c.exec(data))
 }
 
 // SubscriptionId returns the canonical channel name for transactor and beneficiary
@@ -206,9 +210,11 @@ func (c *Contract) exec(input []byte) []byte {
 	c.callMu.Lock()
 	defer c.callMu.Unlock()
 
+	block, state := c.callState()
+
 	ret, err := runtime.Call(contractAddress, input, &runtime.Config{
-		GetHashFn: core.GetHashFn(c.blockchain.CurrentBlock().ParentHash(), c.blockchain),
-		State:     c.callState(),
+		GetHashFn: core.GetHashFn(block.ParentHash(), c.blockchain),
+		State:     state,
 	})
 	if err != nil {
 		log15.Warn("execution failed", "error", err)

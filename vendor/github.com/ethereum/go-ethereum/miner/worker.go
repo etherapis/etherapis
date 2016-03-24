@@ -152,13 +152,7 @@ func (self *worker) setEtherbase(addr common.Address) {
 	self.coinbase = addr
 }
 
-func (self *worker) pendingState() *state.StateDB {
-	self.currentMu.Lock()
-	defer self.currentMu.Unlock()
-	return self.current.state
-}
-
-func (self *worker) pendingBlock() *types.Block {
+func (self *worker) pending() (*types.Block, *state.StateDB) {
 	self.currentMu.Lock()
 	defer self.currentMu.Unlock()
 
@@ -168,9 +162,9 @@ func (self *worker) pendingBlock() *types.Block {
 			self.current.txs,
 			nil,
 			self.current.receipts,
-		)
+		), self.current.state
 	}
-	return self.current.Block
+	return self.current.Block, self.current.state
 }
 
 func (self *worker) start() {
@@ -663,7 +657,7 @@ func (env *Work) commitTransactions(mux *event.TypeMux, transactions types.Trans
 
 func (env *Work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, gp *core.GasPool) (error, vm.Logs) {
 	snap := env.state.Copy()
-	receipt, logs, _, err := core.ApplyTransaction(bc, gp, env.state, env.header, tx, env.header.GasUsed)
+	receipt, logs, _, err := core.ApplyTransaction(bc, gp, env.state, env.header, tx, env.header.GasUsed, nil)
 	if err != nil {
 		env.state.Set(snap)
 		return err, nil

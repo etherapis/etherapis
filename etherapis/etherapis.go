@@ -52,7 +52,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		return nil, err
 	}
 	// Assemble an interface around the consensus contract
-	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.AccountManager(), ethereum.Miner().PendingState)
+	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.AccountManager(), ethereum.Miner().Pending)
 	if err != nil {
 		return nil, err
 	}
@@ -170,10 +170,10 @@ type Transaction struct {
 // RetrieveAccount returns the data associated with the account.
 func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	state, _ := eapis.ethereum.BlockChain().State()
-	pending := eapis.ethereum.Miner().PendingState()
+	pendBlock, pendState := eapis.ethereum.Miner().Pending()
 
 	txs := []*Transaction{}
-	for _, tx := range eapis.ethereum.Miner().PendingBlock().Transactions() {
+	for _, tx := range pendBlock.Transactions() {
 		from, _ := tx.From()
 		if from == account || (tx.To() != nil && *tx.To() == account) {
 			txs = append(txs, &Transaction{
@@ -186,9 +186,9 @@ func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 		}
 	}
 	return Account{
-		Nonce:        pending.GetNonce(account),
+		Nonce:        pendState.GetNonce(account),
 		Balance:      state.GetBalance(account),
-		Change:       new(big.Int).Sub(pending.GetBalance(account), state.GetBalance(account)),
+		Change:       new(big.Int).Sub(pendState.GetBalance(account), state.GetBalance(account)),
 		Transactions: txs,
 	}
 }

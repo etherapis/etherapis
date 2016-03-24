@@ -39,7 +39,7 @@ import (
 // if it failed to do so.
 //
 // ValidateState validates the given statedb and optionally the receipts and
-// gas used. The implementor should decide what to do with the given input.
+// gas used. The implementer should decide what to do with the given input.
 type Validator interface {
 	HeaderValidator
 	ValidateBlock(block *types.Block) error
@@ -61,7 +61,7 @@ type HeaderValidator interface {
 // of gas used in the process and return an error if any of the internal rules
 // failed.
 type Processor interface {
-	Process(block *types.Block, statedb *state.StateDB) (types.Receipts, vm.Logs, *big.Int, error)
+	Process(block *types.Block, statedb *state.StateDB, cfg *vm.Config) (types.Receipts, vm.Logs, *big.Int, error)
 }
 
 // Backend is an interface defining the basic functionality for an operable node

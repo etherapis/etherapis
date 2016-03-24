@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/node"
@@ -91,6 +92,7 @@ func PromptPassword(prompt string, warnTerm bool) (string, error) {
 	}
 	fmt.Print(prompt)
 	input, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	input = strings.TrimRight(input, "\r\n")
 	fmt.Println()
 	return input, err
 }
@@ -130,7 +132,7 @@ func StartNode(stack *node.Node) {
 			}
 		}
 		glog.V(logger.Error).Infof("Force quitting: this might not end so well.")
-		panic("boom")
+		debug.LoudPanic("boom")
 	}()
 }
 
