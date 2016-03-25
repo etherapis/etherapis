@@ -9,10 +9,8 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
-	"strings"
 
 	"github.com/etherapis/etherapis/etherapis"
-	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/mux"
 	"gopkg.in/inconshreveable/log15.v2"
@@ -36,54 +34,12 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router.Handle(base, newStateServer(base, eapis))
 
 	router.HandleFunc(base+"accounts", handler.Accounts)
-	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}", handler.Account)
-	router.HandleFunc(base+"accounts/{address:0x[0-9a-f]{40}}/transactions", handler.Transactions)
-	router.HandleFunc(base+"services/{addresses}", handler.Services)
-	router.HandleFunc(base+"services", handler.Services)
+	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Account)
+	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}/transactions", handler.Transactions)
+	router.HandleFunc(base+"services/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Services)
 	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
 
 	return router
-}
-
-// Services returns the services for a given address or all services if
-// no list of address is given.
-func (a *api) Services(w http.ResponseWriter, r *http.Request) {
-	var (
-		err  error
-		vars = mux.Vars(r)
-	)
-	services := make([]contract.Service, 0) // Initialize to serialize into [], not null
-
-	// if there's an address present on the URL return the services
-	// owned by this account.
-	if addresses, exist := vars["addresses"]; exist {
-		// addresses is a comma separated list of addresseses
-		for _, addr := range strings.Split(addresses, ",") {
-			srvs, err := a.eapis.Contract().Services(common.HexToAddress(addr))
-			if err != nil {
-				log15.Error("Failed to retrieve services", "error", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			services = append(services, srvs...)
-		}
-	} else {
-		// Get all services
-		services, err = a.eapis.Contract().AllServices()
-		if err != nil {
-			log15.Error("Failed to retrieve services", "error", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	out, err := json.Marshal(services)
-	if err != nil {
-		log15.Error("Failed to retrieve services", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write(out)
 }
 
 // Subscriptions retrieves the given address' subscriptions.
@@ -237,6 +193,44 @@ func (a *api) Transactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write([]byte(fmt.Sprintf("0x%x", id)))
+
+	default:
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
+	}
+}
+
+// Services returns the services for a given address or all services if
+// no list of address is given.
+func (a *api) Services(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	switch {
+	case r.Method == "POST":
+		// Create a brand new service based on parameters
+		var (
+			owner = common.HexToAddress(params["address"])
+			name  = r.FormValue("name")
+			url   = r.FormValue("url")
+		)
+		price, ok := new(big.Int).SetString(r.FormValue("price"), 10)
+		if !ok {
+			log15.Error("Invalid price for new service", "price", r.FormValue("price"))
+			http.Error(w, fmt.Sprintf("Invalid price: %s", r.FormValue("price")), http.StatusBadRequest)
+			return
+		}
+		cancel, ok := new(big.Int).SetString(r.FormValue("cancel"), 10)
+		if !ok {
+			log15.Error("Invalid cancellation time for new service", "time", r.FormValue("cancel"))
+			http.Error(w, fmt.Sprintf("Invalid cancellation time: %s", r.FormValue("cancel")), http.StatusBadRequest)
+			return
+		}
+		tx, err := a.eapis.CreateService(owner, name, url, price, cancel.Uint64())
+		if err != nil {
+			log15.Error("Failed to register service", "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("0x%x", tx.Hash())))
 
 	default:
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)

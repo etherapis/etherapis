@@ -76,3 +76,16 @@ function weiAmount(amount, unit) {
 	}
 	return wei;
 }
+
+// secondsDuration converts a textual time duration given in a specific time unit
+// into seconds.
+function secondsDuration(duration, unit) {
+	var secs = parseInt(duration);
+
+	switch (unit.toLowerCase()) {
+		case "seconds": return secs;
+		case "minutes": return secs * 60;
+		case "hours":   return secs * 60 * 60;
+		case "days":    return secs * 60 * 60 * 24;
+	}
+}

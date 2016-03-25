@@ -102,6 +102,10 @@ var (
 		Usage: "Data directory for the databases and keystore",
 		Value: DirectoryString{common.DefaultDataDir()},
 	}
+	KeyStoreDirFlag = DirectoryFlag{
+		Name:  "keystore",
+		Usage: "Directory for the keystore (default = inside the datadir)",
+	}
 	NetworkIdFlag = cli.IntFlag{
 		Name:  "networkid",
 		Usage: "Network identifier (integer, 0=Olympic, 1=Frontier, 2=Morden)",
@@ -139,7 +143,7 @@ var (
 	CacheFlag = cli.IntFlag{
 		Name:  "cache",
 		Usage: "Megabytes of memory allocated to internal caching (min 16MB / database forced)",
-		Value: 0,
+		Value: 128,
 	}
 	BlockchainVersionFlag = cli.IntFlag{
 		Name:  "blockchainversion",
@@ -199,11 +203,6 @@ var (
 		Value: "",
 	}
 
-	// vm flags
-	VMDebugFlag = cli.BoolFlag{
-		Name:  "vmdebug",
-		Usage: "Virtual Machine debug output",
-	}
 	VMForceJitFlag = cli.BoolFlag{
 		Name:  "forcejit",
 		Usage: "Force the JIT VM to take precedence",
@@ -241,7 +240,7 @@ var (
 	}
 	RPCCORSDomainFlag = cli.StringFlag{
 		Name:  "rpccorsdomain",
-		Usage: "Domains from which to accept cross origin requests (browser enforced)",
+		Usage: "Comma separated list of domains from which to accept cross origin requests (browser enforced)",
 		Value: "",
 	}
 	RPCApiFlag = cli.StringFlag{
@@ -393,6 +392,16 @@ func MustMakeDataDir(ctx *cli.Context) string {
 	return ""
 }
 
+// MakeKeyStoreDir resolves the folder to use for storing the account keys from the
+// set command line flags, returning the explicitly requested path, or one inside
+// the data directory otherwise.
+func MakeKeyStoreDir(datadir string, ctx *cli.Context) string {
+	if path := ctx.GlobalString(KeyStoreDirFlag.Name); path != "" {
+		return path
+	}
+	return filepath.Join(datadir, "keystore")
+}
+
 // MakeIPCPath creates an IPC path configuration from the set command line flags,
 // returning an empty string if IPC was explicitly disabled, or the set path.
 func MakeIPCPath(ctx *cli.Context) string {
@@ -513,6 +522,22 @@ func MakeGenesisBlock(ctx *cli.Context) string {
 	return string(data)
 }
 
+// MakeDatabaseHandles raises out the number of allowed file handles per process
+// for Geth and returns half of the allowance to assign to the database.
+func MakeDatabaseHandles() int {
+	if err := raiseFdLimit(2048); err != nil {
+		Fatalf("Failed to raise file descriptor allowance: %v", err)
+	}
+	limit, err := getFdLimit()
+	if err != nil {
+		Fatalf("Failed to retrieve file descriptor allowance: %v", err)
+	}
+	if limit > 2048 { // cap database file descriptors even if more is available
+		limit = 2048
+	}
+	return limit / 2 // Leave half for networking and other stuff
+}
+
 // MakeAccountManager creates an account manager from set command line flags.
 func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
 	// Create the keystore crypto primitive, light if requested
@@ -525,8 +550,9 @@ func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
 	}
 	// Assemble an account manager using the configured datadir
 	var (
-		datadir  = MustMakeDataDir(ctx)
-		keystore = crypto.NewKeyStorePassphrase(filepath.Join(datadir, "keystore"), scryptN, scryptP)
+		datadir     = MustMakeDataDir(ctx)
+		keystoredir = MakeKeyStoreDir(datadir, ctx)
+		keystore    = crypto.NewKeyStorePassphrase(keystoredir, scryptN, scryptP)
 	)
 	return accounts.NewManager(keystore)
 }
@@ -634,6 +660,7 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 		FastSync:                ctx.GlobalBool(FastSyncFlag.Name),
 		BlockChainVersion:       ctx.GlobalInt(BlockchainVersionFlag.Name),
 		DatabaseCache:           ctx.GlobalInt(CacheFlag.Name),
+		DatabaseHandles:         MakeDatabaseHandles(),
 		NetworkId:               ctx.GlobalInt(NetworkIdFlag.Name),
 		AccountManager:          accman,
 		Etherbase:               MakeEtherbase(accman, ctx),
@@ -641,6 +668,8 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 		ExtraData:               MakeMinerExtra(extra, ctx),
 		NatSpec:                 ctx.GlobalBool(NatspecEnabledFlag.Name),
 		DocRoot:                 ctx.GlobalString(DocRootFlag.Name),
+		EnableJit:               ctx.GlobalBool(VMEnableJitFlag.Name),
+		ForceJit:                ctx.GlobalBool(VMForceJitFlag.Name),
 		GasPrice:                common.String2Big(ctx.GlobalString(GasPriceFlag.Name)),
 		GpoMinGasPrice:          common.String2Big(ctx.GlobalString(GpoMinGasPriceFlag.Name)),
 		GpoMaxGasPrice:          common.String2Big(ctx.GlobalString(GpoMaxGasPriceFlag.Name)),
@@ -696,9 +725,6 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 		if !ctx.GlobalIsSet(WhisperEnabledFlag.Name) {
 			shhEnable = true
 		}
-		if !ctx.GlobalIsSet(VMDebugFlag.Name) {
-			vm.Debug = true
-		}
 		ethConf.PowTest = true
 	}
 	// Assemble and return the protocol stack
@@ -739,18 +765,16 @@ func SetupVM(ctx *cli.Context) {
 	vm.EnableJit = ctx.GlobalBool(VMEnableJitFlag.Name)
 	vm.ForceJit = ctx.GlobalBool(VMForceJitFlag.Name)
 	vm.SetJITCacheSize(ctx.GlobalInt(VMJitCacheFlag.Name))
-	if ctx.GlobalIsSet(VMDebugFlag.Name) {
-		vm.Debug = ctx.GlobalBool(VMDebugFlag.Name)
-	}
 }
 
 // MakeChain creates a chain manager from set command line flags.
 func MakeChain(ctx *cli.Context) (chain *core.BlockChain, chainDb ethdb.Database) {
 	datadir := MustMakeDataDir(ctx)
 	cache := ctx.GlobalInt(CacheFlag.Name)
+	handles := MakeDatabaseHandles()
 
 	var err error
-	if chainDb, err = ethdb.NewLDBDatabase(filepath.Join(datadir, "chaindata"), cache); err != nil {
+	if chainDb, err = ethdb.NewLDBDatabase(filepath.Join(datadir, "chaindata"), cache, handles); err != nil {
 		Fatalf("Could not open database: %v", err)
 	}
 	if ctx.GlobalBool(OlympicFlag.Name) {

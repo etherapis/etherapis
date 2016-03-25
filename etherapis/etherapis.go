@@ -52,7 +52,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		return nil, err
 	}
 	// Assemble an interface around the consensus contract
-	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.Miner().PendingState)
+	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.AccountManager(), ethereum.Miner().Pending)
 	if err != nil {
 		return nil, err
 	}
@@ -167,13 +167,13 @@ type Transaction struct {
 	Fees   *big.Int       `json:"fees"`
 }
 
-// GetAccount returns the data associated with the account.
-func (eapis *EtherAPIs) GetAccount(account common.Address) Account {
+// RetrieveAccount returns the data associated with the account.
+func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	state, _ := eapis.ethereum.BlockChain().State()
-	pending := eapis.ethereum.Miner().PendingState()
+	pendBlock, pendState := eapis.ethereum.Miner().Pending()
 
 	txs := []*Transaction{}
-	for _, tx := range eapis.ethereum.Miner().PendingBlock().Transactions() {
+	for _, tx := range pendBlock.Transactions() {
 		from, _ := tx.From()
 		if from == account || (tx.To() != nil && *tx.To() == account) {
 			txs = append(txs, &Transaction{
@@ -186,15 +186,15 @@ func (eapis *EtherAPIs) GetAccount(account common.Address) Account {
 		}
 	}
 	return Account{
-		Nonce:        pending.GetNonce(account),
+		Nonce:        pendState.GetNonce(account),
 		Balance:      state.GetBalance(account),
-		Change:       new(big.Int).Sub(pending.GetBalance(account), state.GetBalance(account)),
+		Change:       new(big.Int).Sub(pendState.GetBalance(account), state.GetBalance(account)),
 		Transactions: txs,
 	}
 }
 
-// Accounts retrieves the list of accounts known to etherapis.
-func (eapis *EtherAPIs) Accounts() ([]common.Address, error) {
+// ListAccounts retrieves the list of accounts known to etherapis.
+func (eapis *EtherAPIs) ListAccounts() ([]common.Address, error) {
 	accounts, err := eapis.ethereum.AccountManager().Accounts()
 	if err != nil {
 		return nil, err
@@ -244,6 +244,36 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 		return common.Hash{}, err
 	}
 	return signed.Hash(), nil
+}
+
+// CreateService registers a new service into the API marketplace.
+func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, price *big.Int, cancel uint64) (*types.Transaction, error) {
+	tx, err := eapis.contract.AddService(owner, name, url, price, cancel)
+	if err != nil {
+		return nil, err
+	}
+	if err := eapis.Ethereum().TxPool().Add(tx); err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+// Services retrieves a map of locally owned services, grouped by owner account.
+func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error) {
+	// Fetch all the accounts owned by this node
+	addresses, err := eapis.ListAccounts()
+	if err != nil {
+		return nil, err
+	}
+	// For each address, retrieves all the registered services
+	services := make(map[common.Address][]contract.Service)
+	for _, address := range addresses {
+		services[address], err = eapis.contract.Services(address)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return services, nil
 }
 
 // Geth retrieves the Ethereum client through which to interact with the underlying
