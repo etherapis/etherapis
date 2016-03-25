@@ -50,12 +50,44 @@ var Provider = React.createClass({
 window.Provider = Provider // Expose the component
 
 var Service = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			action: "",
+		};
+	},
+	// abortAction restores the service UI into it's default no-action state.
+	abortAction: function(event) {
+		if (event != null) {
+			event.preventDefault();
+		}
+		this.setState({action: ""});
+	},
+	// confirmUnlock displays service unlocking explanation message and the manual
+	// confirmation buttons.
+	confirmUnlock: function(event) {
+		event.preventDefault();
+		this.setState({action: "unlock"});
+	},
+	// confirmLock displays service locking explanation and warning messages and the
+	// manual confirmation buttons.
+	confirmLock: function(event) {
+		event.preventDefault();
+		this.setState({action: "lock"});
+	},
+	// confirmDelete displays the services deletion warning message and the manual
+	// confirmation buttons.
+	confirmDelete: function(event) {
+		event.preventDefault();
+		this.setState({action: "delete"});
+	},
+	// render flattens the service stats into a UI panel.
 	render: function() {
 		return (
 			<div className={this.props.service.enabled ? "panel panel-default" : "panel panel-warning"}>
 				<div className="panel-heading">
 					<div className="pull-right"><i className={this.props.service.enabled ? "fa fa-unlock" : "fa fa-lock"}></i></div>
-					<h3 className="panel-title">{this.props.service.name}</h3>
+					<h3 className="panel-title">{this.props.service.name}&nbsp;</h3>
 				</div>
 				<div className="panel-body" id="services">
 					<table className="table table-condensed">
@@ -95,18 +127,182 @@ var Service = React.createClass({
 						<hr style={{margin: "10px 0"}}/>
 						<div className="pull-right">
 							{this.props.service.enabled ?
-								<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmDisable}><i className="fa fa-lock"></i> Disable</a> :
-								<a href="#" className="btn btn-sm btn-success" onClick={this.confirmEnable}><i className="fa fa-unlock"></i> Enable</a>
+								<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmLock}><i className="fa fa-lock"></i> Disable</a> :
+								<a href="#" className="btn btn-sm btn-success" onClick={this.confirmUnlock}><i className="fa fa-unlock"></i> Enable</a>
 							}
 							&nbsp;
 							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-times"></i> Delete</a>
 						</div>
 					</div>
+					<UnlockConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "unlock"} abort={this.abortAction}/>
+					<LockConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "lock"} abort={this.abortAction}/>
+					<DeleteConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "delete"} abort={this.abortAction}/>
 				</div>
 			</div>
 		);
 	}
 });
+
+// UnlockConfirm displays a warning message and requires an additional confirmation
+// from the user to ensure that no accidental service unlocking - and inherently
+// subscription floodgate opening - happen.
+var UnlockConfirm = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			progress: false,
+			failure:	null,
+		};
+	},
+	// unlockService executes the actual service unlocking, sending back the service
+	// identifier to the server for subscription allowance.
+	unlockService: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
+		this.setState({progress: true});
+
+		// Execute the service locking
+		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+			error: function(xhr, status, err) {
+				this.setState({progress: false, failure: xhr.responseText});
+			}.bind(this),
+		});*/
+	},
+	// render flattens the account stats into a UI panel.
+	render: function() {
+		// Short circuit rendering if we're not confirming deletion
+		if (this.props.hide) {
+			return null
+		}
+		return (
+			<div>
+				<hr/>
+				<p>
+					This service is currently <strong>disabled</strong>: it is hidden from the marketplace and new users
+					cannot subscribe to it. By enabling it you permit global subscriptions. Please ensure your API is
+					online to prevent advertising dysfunctional endpoints.
+				</p>
+				<div style={{textAlign: "center"}}>
+					<p><strong>Availability changes incur the consensus fees of the Ethereum network.</strong></p>
+					<a href="#" className={"btn btn-success " + (this.state.progress ? "disabled" : "")} onClick={this.unlockService}>
+						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Enable new subscriptions
+					</a>
+					&nbsp;&nbsp;&nbsp;
+					<a href="#" className="btn btn-info" onClick={this.props.abort}>Keep subscriptions closed</a>
+				</div>
+				{ this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to delete account: {this.state.failure}</p></div> : null }
+			</div>
+		)
+	}
+})
+
+// LockConfirm displays a warning message and requires an additional confirmation
+// from the user to ensure that no accidental service locking - and inherently
+// subscription prevention - happen.
+var LockConfirm = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			progress: false,
+			failure:	null,
+		};
+	},
+	// lockService executes the actual service locking, sending back the service
+	// identifier to the server for subscription prevention.
+	lockService: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
+		this.setState({progress: true});
+
+		// Execute the service locking
+		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+			error: function(xhr, status, err) {
+				this.setState({progress: false, failure: xhr.responseText});
+			}.bind(this),
+		});*/
+	},
+	// render flattens the account stats into a UI panel.
+	render: function() {
+		// Short circuit rendering if we're not confirming deletion
+		if (this.props.hide) {
+			return null
+		}
+		return (
+			<div>
+				<hr/>
+				<p>
+					This service is currently <strong>enabled</strong> and can accept new API subscriptions from users
+					around the globe. By disabling it you can hide the service from the marketplace and prevent new
+					users from subscribing. Existing ones remain valid and operational!
+				</p>
+				<div style={{textAlign: "center"}}>
+					<p><strong>Availability changes incur the consensus fees of the Ethereum network.</strong></p>
+					<a href="#" className={"btn btn-warning " + (this.state.progress ? "disabled" : "")} onClick={this.lockService}>
+						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Disable new subscriptions
+					</a>
+					&nbsp;&nbsp;&nbsp;
+					<a href="#" className="btn btn-info" onClick={this.props.abort}>Keep subscriptions open</a>
+				</div>
+				{ this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to delete account: {this.state.failure}</p></div> : null }
+			</div>
+		)
+	}
+})
+
+// DeleteConfirm displays a warning message and requires an additional confirmation
+// from the user to ensure that no accidental service deletion happens.
+var DeleteConfirm = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			progress: false,
+			failure:	null,
+		};
+	},
+	// deleteService executes the actual service deletion, sending back the account
+	// identifier to the server for irreversible removal.
+	deleteService: function(event) {
+		event.preventDefault();
+
+		// Show the spinner until something happens
+		this.setState({progress: true});
+
+		// Execute the account deletion request
+		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+			error: function(xhr, status, err) {
+				this.setState({progress: false, failure: xhr.responseText});
+			}.bind(this),
+		});*/
+	},
+	// render flattens the account stats into a UI panel.
+	render: function() {
+		// Short circuit rendering if we're not confirming deletion
+		if (this.props.hide) {
+			return null
+		}
+		return (
+			<div>
+				<hr/>
+				<p>
+					<strong>Warning!</strong> Deleting a service is permanent and irreversible. It will stop all associated
+					API proxies (local and remote) and take this service off the marketplace. An attempt is also made to
+					charge all pending subscription payments.
+				</p>
+				<div style={{textAlign: "center"}}>
+					<p><strong>Deletion incurs the consensus fees of the Ethereum network.</strong></p>
+					<a href="#" className={"btn btn-danger " + (this.state.progress ? "disabled" : "")} onClick={this.deleteService}>
+						{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} <strong>Irreversibly</strong> delete service
+					</a>
+					&nbsp;&nbsp;&nbsp;
+					<a href="#" className="btn btn-success" onClick={this.props.abort}>Keep service available</a>
+				</div>
+				{ this.state.failure ? <div style={{textAlign: "center"}}><hr/><p className="text-danger">Failed to delete service: {this.state.failure}</p></div> : null }
+			</div>
+		)
+	}
+})
 
 // ServiceCreator is a UI component for generating a brand new pristine service.
 var ServiceCreator = React.createClass({

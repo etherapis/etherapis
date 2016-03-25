@@ -72,8 +72,8 @@ var Account = React.createClass({
 		}
 		this.setState({action: ""});
 	},
-	// transferFunds displays the account export warning message, the password input
-	// field to encrypt the key with and the manual confirmation buttons.
+	// transferFunds displays the value transfer explanation, input fields and the
+	// manual confirmation buttons.
 	transferFunds: function(event) {
 		event.preventDefault();
 		this.setState({action: "transfer"});
@@ -331,7 +331,7 @@ var ExportConfirm = React.createClass({
 	}
 })
 
-// DeleteConfirm displays a warning message and requires an addtional confirmation
+// DeleteConfirm displays a warning message and requires an additional confirmation
 // from the user to ensure that no accidental account deletion happens.
 var DeleteConfirm = React.createClass({
 	// getInitialState sets the zero values of the component.
