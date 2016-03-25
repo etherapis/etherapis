@@ -166,15 +166,15 @@ var Address = React.createClass({
 	render: function() {
 		if (this.props.small) {
 			return (
-				<small>
-					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 1.5}).toDataURL()}/>
+				<small className="text-nowrap">
+					<img style={{borderRadius: "50%", marginRight: "4px", marginBottom: "2px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 1.5}).toDataURL()}/>
 					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>
 				</small>
 			);
 		} else {
 			return (
-				<span>
-					<img style={{borderRadius: "50%", marginRight: "4px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
+				<span className="text-nowrap">
+					<img style={{borderRadius: "50%", marginRight: "4px", marginBottom: "2px"}} src={blockies.create({seed: this.props.address, size: 8, scale: 2}).toDataURL()}/>
 					<span style={{fontFamily: "monospace"}}>{this.props.address}</span>
 				</span>
 			);

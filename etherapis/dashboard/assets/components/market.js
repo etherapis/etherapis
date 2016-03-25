@@ -1,21 +1,4 @@
 var Market = React.createClass({
-	getInitialState: function() {
-		return { services: [] };
-	},
-
-	componentDidMount: function() {
-		this.refreshMarket();
-		if(this.props.interval !== undefined) {
-			setInterval(this.refreshMarket, this.props.interval);
-		}
-	},
-	
-	refreshMarket: function() {
-		this.props.ajax(this.props.apiurl + "/services", function(services) {
-			this.setState({services: services});
-		}.bind(this));
-	},
-
 	render: function() {
 		if (this.props.hide) {
 			return null
@@ -26,26 +9,29 @@ var Market = React.createClass({
 				<div className="panel-heading">
 					<h3 className="panel-title">API Market</h3>
 				</div>
-				<div className="panel-body">
-					The API store in its full glory and awesomeness...
-				</div>
-
 				<table className="table">
 					<thead>
 						<tr>
-							<th>Name</th>
-							<th>Endpoint</th>
-							<th>Owner</th>
-							<th>Price</th>
-							<th>Cancellation time</th>
-							<th></th>
+							<th className="text-nowrap"><i className="fa fa-bookmark"></i> Name</th>
+							<th className="text-nowrap"><i className="fa fa-link"></i> Endpoint</th>
+							<th className="text-nowrap"><i className="fa fa-user"></i> Owner</th>
+							<th className="text-nowrap">&Xi; Price</th>
+							<th className="text-nowrap"><i className="fa fa-ban"></i> Cancellation</th>
+							<th className="text-nowrap"></th>
 						</tr>
 					</thead>
 
 					<tbody>
-						{this.state.services.map(function(service, i) {
+						{this.props.market.map(function(service, i) {
 							return (
-								<MarketItem key={"market-item-"+i} name={service.name} ajax={this.props.ajax} service={service}/>
+								<tr key={"market-item-"+i} >
+									<td><small>{service.name}</small></td>
+									<td><small>{service.endpoint}</small></td>
+									<td><Address address={service.owner} small/></td>
+									<td className="text-nowrap text-center"><small>{formatBalance(service.price)}</small></td>
+									<td className="text-nowrap text-center"><small>{moment.duration(service.cancellationTime, "seconds").humanize()}</small></td>
+									<td><Subscribe/></td>
+								</tr>
 							);
 						}.bind(this))}
 					</tbody>
@@ -55,21 +41,6 @@ var Market = React.createClass({
 	}
 });
 window.Market = Market;
-
-var MarketItem = React.createClass({
-	render: function() {
-		return (
-			<tr>
-				<td>{this.props.service.name}</td>
-				<td><a href={this.props.service.endpoint}>{this.props.service.endpoint}</a></td>
-				<td>{this.props.service.owner}</td>
-				<td>{this.props.service.price}</td>
-				<td>{this.props.service.cancellationTime}</td>
-				<td><Subscribe/></td>
-			</tr>
-		);
-	},
-});
 
 var Subscribe = React.createClass({
 	render: function() {
