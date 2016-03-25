@@ -52,17 +52,18 @@ window.Provider = Provider // Expose the component
 var Service = React.createClass({
 	render: function() {
 		return (
-			<div className={this.props.service.enabled ? "panel panel-success" : "panel panel-default"}>
+			<div className={this.props.service.enabled ? "panel panel-default" : "panel panel-warning"}>
 				<div className="panel-heading">
-					<h3 className="panel-title">{this.props.service.name}: {this.props.service.enabled ? "Enabled" : "Disabled"}</h3>
+					<div className="pull-right"><i className={this.props.service.enabled ? "fa fa-unlock" : "fa fa-lock"}></i></div>
+					<h3 className="panel-title">{this.props.service.name}</h3>
 				</div>
 				<div className="panel-body" id="services">
 					<table className="table table-condensed">
 						<tbody>
-							<tr><td><i className="fa fa-user"></i> Owner</td><td><Address address={this.props.service.owner}/></td></tr>
-							<tr><td><i className="fa fa-link"></i> Endpoint</td><td>{this.props.service.endpoint}</td></tr>
-							<tr><td>&Xi; Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
-							<tr><td><i className="fa fa-ban"></i> Cancellation</td><td>{moment.duration(this.props.service.cancellationTime, "seconds").humanize()} ({this.props.service.cancellationTime} secs)</td></tr>
+							<tr><td className="text-nowrap"><i className="fa fa-user"></i> Owner</td><td><Address address={this.props.service.owner}/></td></tr>
+							<tr><td className="text-nowrap"><i className="fa fa-link"></i> Endpoint</td><td>{this.props.service.endpoint}</td></tr>
+							<tr><td className="text-nowrap">&Xi; Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
+							<tr><td className="text-nowrap"><i className="fa fa-ban"></i> Cancellation</td><td>{moment.duration(this.props.service.cancellationTime, "seconds").humanize()} ({this.props.service.cancellationTime} secs)</td></tr>
 						</tbody>
 					</table>
 					<table className="table table-striped table-condensed">
@@ -90,6 +91,17 @@ var Service = React.createClass({
 							</tr>
 						</tbody>
 					</table>
+					<div className="clearfix">
+						<hr style={{margin: "10px 0"}}/>
+						<div className="pull-right">
+							{this.props.service.enabled ?
+								<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmDisable}><i className="fa fa-lock"></i> Disable</a> :
+								<a href="#" className="btn btn-sm btn-success" onClick={this.confirmEnable}><i className="fa fa-unlock"></i> Enable</a>
+							}
+							&nbsp;
+							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-times"></i> Delete</a>
+						</div>
+					</div>
 				</div>
 			</div>
 		);
