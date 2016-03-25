@@ -99,23 +99,20 @@ var Account = React.createClass({
 					<a href={this.props.explorer + "address/" + this.props.address} target="_blank" className="pull-right"><i className="fa fa-external-link"></i></a>
 				</div>
 				<div className="panel-body">
-					<table className="table">
-						<thead><tr>
-							<th>Balance</th><th>Services</th><th>Subscriptions</th>
-						</tr></thead>
-						<tbody><tr>
-							<td>
-								{ formatBalance(this.props.details.balance) }
+					<table className="table table-condensed">
+						<tbody>
+							<tr><td className="text-center">&Xi;</td><td>Balance</td><td style={{width: "100%"}}>
+								{formatBalance(this.props.details.balance)}
 								&nbsp;
 								{ this.props.details.change != 0 ?
 									<span className={this.props.details.change < 0 ? "text-danger" : "text-success"}>
 										{this.props.details.change < 0 ? "-" : "+"} { formatBalance(Math.abs(this.props.details.change)) }
 									</span> : null
 								}
-							</td>
-							<td>{0}</td>
-							<td>{0}</td>
-						</tr></tbody>
+							</td></tr>
+							<tr><td className="text-center"><i className="fa fa-cloud-upload"></i></td><td>Provided</td><td>0</td></tr>
+							<tr><td className="text-center"><i className="fa fa-cloud-download"></i></td><td>Subscribed</td><td>0</td></tr>
+						</tbody>
 					</table>
 					{
 						this.props.details.transactions.length == 0 ? null :
@@ -141,7 +138,6 @@ var Account = React.createClass({
 							</table>
 					}
 					<div className="clearfix">
-						<hr style={{margin: "10px 0"}}/>
 						{ this.props.address == this.props.active ? null : <a href="#" className="btn btn-sm btn-success" onClick={this.activate}><i className="fa fa-check-circle-o"></i> Activate</a>}
 						<div className="pull-right">
 							{this.props.details.balance > 0 ? <a href="#" className="btn btn-sm btn-default" onClick={this.transferFunds}><i className="fa fa-arrow-circle-o-right"></i> Transfer</a> : null }

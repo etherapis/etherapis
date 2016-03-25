@@ -92,10 +92,10 @@ var Service = React.createClass({
 				<div className="panel-body" id="services">
 					<table className="table table-condensed">
 						<tbody>
-							<tr><td className="text-nowrap"><i className="fa fa-user"></i> Owner</td><td><Address address={this.props.service.owner}/></td></tr>
-							<tr><td className="text-nowrap"><i className="fa fa-link"></i> Endpoint</td><td>{this.props.service.endpoint}</td></tr>
-							<tr><td className="text-nowrap">&Xi; Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
-							<tr><td className="text-nowrap"><i className="fa fa-ban"></i> Cancellation</td><td>{moment.duration(this.props.service.cancellationTime, "seconds").humanize()} ({this.props.service.cancellationTime} secs)</td></tr>
+							<tr><td className="text-center"><i className="fa fa-user"></i></td><td>Owner</td><td style={{width: "100%"}}><Address address={this.props.service.owner}/></td></tr>
+							<tr><td className="text-center"><i className="fa fa-link"></i></td><td>Endpoint</td><td>{this.props.service.endpoint}</td></tr>
+							<tr><td className="text-center">&Xi;</td><td>Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
+							<tr><td className="text-center"><i className="fa fa-ban"></i></td><td>Cancellation</td><td>{moment.duration(this.props.service.cancellationTime, "seconds").humanize()} ({this.props.service.cancellationTime} secs)</td></tr>
 						</tbody>
 					</table>
 					<table className="table table-striped table-condensed">
@@ -506,7 +506,8 @@ var ServiceCreator = React.createClass({
 								</div>
 							</div>
 						</div>
-						<div className="form-group" style={{marginBottom: 0}}>
+						<div className="form-group" style={{marginBottom: 0, textAlign: "center"}}>
+							<p><strong>Registering a service incurs the consensus fees of the Ethereum network.</strong></p>
 							<div className="col-lg-2 col-lg-offset-5">
 								<a href="#" className={"btn btn-default " + ((this.state.public && (this.state.name == "" || this.state.endpoint == "")) || this.state.price == "" || this.state.cancel == "" ? "disabled" : "")} style={{width: "100%"}}  onClick={this.registerService}>
 									{ this.state.progress ? <i className="fa fa-spinner fa-spin"></i> : null} Register service
