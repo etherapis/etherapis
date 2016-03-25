@@ -276,6 +276,11 @@ func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error
 	return services, nil
 }
 
+// Marketplace retrieves all the available services from the marketplace.
+func (eapis *EtherAPIs) Marketplace() ([]contract.Service, error) {
+	return eapis.contract.AllServices()
+}
+
 // Geth retrieves the Ethereum client through which to interact with the underlying
 // peer-to-peer networking layer.
 func (eapis *EtherAPIs) Geth() *geth.Geth {

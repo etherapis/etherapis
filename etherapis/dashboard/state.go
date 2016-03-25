@@ -38,6 +38,9 @@ type state struct {
 	}
 	// Services contains all the known information about registered APIs
 	Services map[string][]contract.Service
+
+	// Market is the full listing of globally available services
+	Market []contract.Service
 }
 
 // Apply injects a state diff into the current state. If the diff specifies a
@@ -137,6 +140,8 @@ func (server *stateServer) start() {
 	for account, service := range services {
 		server.state.Services[account.Hex()] = service
 	}
+	server.state.Market, _ = server.eapis.Marketplace()
+
 	// Register any event listeners
 	go server.loop()
 }
@@ -173,7 +178,13 @@ func (server *stateServer) loop() {
 			}
 		}
 	}
-
+	// Quick hack helper method to check for market updates
+	updateMarket := func(update *stateUpdate) {
+		market, _ := server.eapis.Marketplace()
+		if !reflect.DeepEqual(market, server.state.Market) {
+			update.Diffs = append(update.Diffs, stateDiff{Path: []string{"market"}, Node: market})
+		}
+	}
 	for {
 		// Prepare the state update diff list for population
 		update := &stateUpdate{
@@ -204,6 +215,7 @@ func (server *stateServer) loop() {
 				}...)
 				updateAccounts(update)
 				updateServices(update)
+				updateMarket(update)
 
 			case core.PendingStateEvent:
 				// The pending state of the system changed, check if we need to update accounts

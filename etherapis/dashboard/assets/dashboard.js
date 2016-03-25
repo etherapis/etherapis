@@ -101,7 +101,7 @@ var Dashboard = React.createClass({
 					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"	} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
 					<Provider hide={this.state.section != "provider"} apiurl={this.props.apiurl + "/services"} accounts={this.state.server} active={this.state.account} services={this.state.server.services} loadaccs={this.loadAccount} switch={this.switchAccount}/>
 					<Subscriber hide={this.state.section != "subscriber"}/>
-					<Market hide={this.state.section != "market"} ajax={this.apiCall} apiurl={this.props.apiurl} interval={1000}/>
+					<Market hide={this.state.section != "market"} apiurl={this.props.apiurl + "/market"} market={this.state.server.market}/>
 					<div style={{height: this.state.footer}}></div>
 				</div>
 				<TestnetFooter hide={false} height={this.state.footer}/>
