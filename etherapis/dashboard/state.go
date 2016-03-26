@@ -136,7 +136,7 @@ func (server *stateServer) start() {
 	origin, current, height, pulled, known := eth.Downloader().Progress()
 	server.state.Ethereum.Syncing = &downloader.Progress{origin, current, height, pulled, known}
 
-	services, _ := server.eapis.Services(false)
+	services, _ := server.eapis.Services()
 	server.state.Services = make(map[string][]*etherapis.Service)
 	for account, service := range services {
 		server.state.Services[account.Hex()] = service
@@ -174,7 +174,7 @@ func (server *stateServer) loop() {
 	}
 	// Quick hack helper method to check for service updates
 	updateServices := func(update *stateUpdate) {
-		all, _ := server.eapis.Services(true)
+		all, _ := server.eapis.Services()
 		for address, services := range all {
 			if !reflect.DeepEqual(services, server.state.Services[address.Hex()]) {
 				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"services", address.Hex()}, Node: services})

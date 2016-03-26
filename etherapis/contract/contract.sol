@@ -1,7 +1,11 @@
 contract ServiceProviders {
+	// PaymentModel is the possible payment models that proxies should be able to handle.
+	enum PaymentModel {PerCall, PerData, PerTime}
+
 	struct Terms {
-		uint price;
-		uint cancellation;
+		PaymentModel model;
+		uint         price;
+		uint         cancellation;
 	}
 
 	struct Service {
@@ -38,6 +42,7 @@ contract ServiceProviders {
 		string name,
 		address owner,
 		string endpoint,
+		uint model,
 		uint price,
 		uint cancellation,
 		bool enabled,
@@ -48,6 +53,7 @@ contract ServiceProviders {
 			service.name,
 			service.owner,
 			service.endpoint,
+			uint(service.terms.model),
 			service.terms.price,
 			service.terms.cancellation,
 			service.enabled,
@@ -71,7 +77,7 @@ contract ServiceProviders {
 	}
 
 	// Add a new service.
-	function addService(string name, string endpoint, uint price, uint cancellation) {
+	function addService(string name, string endpoint, uint model, uint price, uint cancellation) {
 		Service service = services[services.length++];
 		service.exist = true;
 		service.enabled = false;
@@ -79,6 +85,7 @@ contract ServiceProviders {
 		service.owner = msg.sender;
 		service.name = name;
 		service.endpoint = endpoint;
+		service.terms.model = PaymentModel(model);
 		service.terms.price = price;
 		service.terms.cancellation = cancellation;
 
