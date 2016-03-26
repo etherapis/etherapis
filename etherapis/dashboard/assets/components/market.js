@@ -12,12 +12,13 @@ var Market = React.createClass({
 				<table className="table table-condensed">
 					<thead>
 						<tr>
-							<th className="text-nowrap"><i className="fa fa-bookmark"></i> Name</th>
-							<th className="text-nowrap"><i className="fa fa-star"></i> Rating</th>
+							<th className="text-nowrap"><i className="fa fa-bookmark-o"></i> Name</th>
+							<th className="text-nowrap"><i className="fa fa-star-half-o"></i> Rating</th>
 							<th className="text-nowrap"><i className="fa fa-link"></i> Endpoint</th>
 							<th className="text-nowrap"><i className="fa fa-user"></i> Owner</th>
-							<th className="text-nowrap">&Xi; Price</th>
-							<th className="text-nowrap"><i className="fa fa-ban"></i> Cancellation</th>
+							<th className="text-nowrap text-center"><i className="fa fa-credit-card-alt"></i> Model</th>
+							<th className="text-nowrap text-center">&Xi; Price</th>
+							<th className="text-nowrap text-center"><i className="fa fa-ban"></i> Cancellation</th>
 							<th className="text-nowrap"></th>
 						</tr>
 					</thead>
@@ -30,6 +31,13 @@ var Market = React.createClass({
 									<td><RatingBar rating={6 * service.name.length}/></td>
 									<td><small>{service.endpoint}</small></td>
 									<td><Address address={service.owner} small/></td>
+									<td className="text-nowrap text-center"><small>{
+										service.model == 0 ? "call" :
+										service.model == 1 ? "data" :
+										service.model == 2 ? "time" :
+										"unknown"
+									}
+									</small></td>
 									<td className="text-nowrap text-center"><small>{formatBalance(service.price)}</small></td>
 									<td className="text-nowrap text-center"><small>{moment.duration(service.cancellation, "seconds").humanize()}</small></td>
 									<td><Subscribe/></td>

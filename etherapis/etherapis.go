@@ -268,12 +268,12 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 }
 
 // CreateService registers a new service into the API marketplace.
-func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, price *big.Int, cancel uint64) (*types.Transaction, error) {
+func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, model *big.Int, price *big.Int, cancel uint64) (*types.Transaction, error) {
 	auth := &bind.TransactOpts{
 		From:   owner,
 		Signer: eapis.signer,
 	}
-	return eapis.contract.AddService(auth, name, url, price, big.NewInt(int64(cancel)))
+	return eapis.contract.AddService(auth, name, url, model, price, big.NewInt(int64(cancel)))
 }
 
 // DeleteService sets a service to deleted, permanently removing it from all listings.
@@ -345,6 +345,7 @@ func (eapis *EtherAPIs) Services() (map[common.Address][]*Service, error) {
 				Name:         pending.Name,
 				Owner:        pending.Owner,
 				Endpoint:     pending.Endpoint,
+				Model:        pending.Model,
 				Price:        pending.Price,
 				Cancellation: pending.Cancellation,
 				Enabled:      pending.Enabled,
@@ -383,6 +384,7 @@ func (eapis *EtherAPIs) Marketplace() ([]*Service, error) {
 			Name:         service.Name,
 			Owner:        service.Owner,
 			Endpoint:     service.Endpoint,
+			Model:        service.Model,
 			Price:        service.Price,
 			Cancellation: service.Cancellation,
 		})

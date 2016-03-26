@@ -53,7 +53,7 @@ func main() {
 	}
 	// Start the Ether APIs client and unlock all used accounts
 	log15.Info("Joining Ethereum network...")
-	client, err := etherapis.New(datadir, geth.TestNet, common.HexToAddress("0x423df8f2f6a9e87dc8b40df296010a8ade0c52ba"))
+	client, err := etherapis.New(datadir, geth.TestNet, common.HexToAddress("0x1b523270eac78b07cb6170c11abff9a1df39ca20"))
 	if err != nil {
 		log15.Crit("Failed to create Ether APIs client", "error", err)
 		return

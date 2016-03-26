@@ -25,7 +25,7 @@ func TestDeploymentAndIntegration(t *testing.T) {
 
 	// use a session based approach so that we do not need
 	// to repass these settings all the time.
-	session := &EtherApisSession{
+	session := &EtherAPIsSession{
 		Contract: api,
 		CallOpts: bind.CallOpts{
 			Pending: true,
@@ -38,7 +38,7 @@ func TestDeploymentAndIntegration(t *testing.T) {
 	}
 
 	// add a new service
-	_, err = session.AddService("etherapis", "https://etherapis.io", big.NewInt(10), big.NewInt(432000))
+	_, err = session.AddService("etherapis", "https://etherapis.io", big.NewInt(0), big.NewInt(10), big.NewInt(432000))
 	if err != nil {
 		t.Error(err)
 	}

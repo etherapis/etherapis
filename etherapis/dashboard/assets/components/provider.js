@@ -104,6 +104,12 @@ var Service = React.createClass({
 						<tbody>
 							<tr><td className="text-center"><i className="fa fa-user"></i></td><td>Owner</td><td style={{width: "100%"}}><Address address={this.props.service.owner}/></td></tr>
 							<tr><td className="text-center"><i className="fa fa-link"></i></td><td>Endpoint</td><td>{this.props.service.endpoint}</td></tr>
+							<tr><td className="text-center"><i className="fa fa-credit-card-alt"></i></td><td>Payment</td><td>{
+								this.props.service.model == 0 ? "per API invocation (calls)" :
+								this.props.service.model == 1 ? "per consumed data traffic (bytes)" :
+								this.props.service.model == 2 ? "per maintained connection time (seconds)" :
+								"Something's wrong!"
+							}</td></tr>
 							<tr><td className="text-center">&Xi;</td><td>Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
 							<tr><td className="text-center"><i className="fa fa-ban"></i></td><td>Cancellation</td><td>{moment.duration(this.props.service.cancellation, "seconds").humanize()} ({this.props.service.cancellation} secs)</td></tr>
 						</tbody>
@@ -343,7 +349,7 @@ var ServiceCreator = React.createClass({
 			public:   true,
 			name:     "",
 			endpoint: "",
-			payment:  "call",
+			model:    "0",
 			price:    "",
 			denom:    EthereumUnits[4],
 			cancel:   "",
@@ -368,6 +374,7 @@ var ServiceCreator = React.createClass({
 	},
 	updateName:     function(event) { this.setState({name: event.target.value}); },
 	updateEndpoint: function(event) { this.setState({endpoint: event.target.value}); },
+	updateModel:    function(event) {	this.setState({model: event.target.value}	); },
 	updatePrice:    function(event) { this.setState({price: event.target.value}); },
 	updateCancel:   function(event) { this.setState({cancel: event.target.value}); },
 
@@ -390,6 +397,7 @@ var ServiceCreator = React.createClass({
 		var form = new FormData();
 		form.append("name", this.state.name);
 		form.append("url", this.state.endpoint);
+		form.append("model", this.state.model);
 		form.append("price", weiAmount(this.state.price, this.state.denom));
 		form.append("cancel", secondsDuration(this.state.cancel, this.state.scale));
 
@@ -483,20 +491,17 @@ var ServiceCreator = React.createClass({
 								<div className="col-lg-10">
 									<div className="radio">
 										<label>
-											<input type="radio" name="serviceType" defaultChecked/>
-											Per API invocation (calls)
+											<input type="radio" name="serviceType" value="0" checked={this.state.model == "0"} onChange={this.updateModel}/>Per API invocation (calls)
 										</label>
 									</div>
 									<div className="radio">
 										<label>
-											<input type="radio" name="serviceType"/>
-											Per consumed data traffic (bytes)
+											<input type="radio" name="serviceType" value="1" checked={this.state.model == "1"} onChange={this.updateModel}/>Per consumed data traffic (bytes)
 										</label>
 									</div>
 									<div className="radio">
 										<label>
-											<input type="radio" name="serviceType"/>
-											Per maintained connection time (seconds)
+											<input type="radio" name="serviceType" value="2" checked={this.state.model == "2"} onChange={this.updateModel}/>Per maintained connection time (seconds)
 										</label>
 									</div>
 								</div>

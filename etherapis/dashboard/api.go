@@ -185,6 +185,12 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 			name  = r.FormValue("name")
 			url   = r.FormValue("url")
 		)
+		model, ok := new(big.Int).SetString(r.FormValue("model"), 10)
+		if !ok || model.Cmp(big.NewInt(0)) < 0 || model.Cmp(big.NewInt(2)) > 0 {
+			log15.Error("Invalid payment model for new service", "model", r.FormValue("model"))
+			http.Error(w, fmt.Sprintf("Invalid payment model: %s", r.FormValue("model")), http.StatusBadRequest)
+			return
+		}
 		price, ok := new(big.Int).SetString(r.FormValue("price"), 10)
 		if !ok {
 			log15.Error("Invalid price for new service", "price", r.FormValue("price"))
@@ -197,7 +203,7 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Invalid cancellation time: %s", r.FormValue("cancel")), http.StatusBadRequest)
 			return
 		}
-		tx, err := a.eapis.CreateService(owner, name, url, price, cancel.Uint64())
+		tx, err := a.eapis.CreateService(owner, name, url, model, price, cancel.Uint64())
 		if err != nil {
 			log15.Error("Failed to register service", "error", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
