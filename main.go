@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"math/big"
@@ -209,35 +210,36 @@ func (c *testCharger) Charge(from common.Address, serviceId *big.Int, amount *bi
 
 type Charger struct {
 	txPool         *core.TxPool
-	contract       *contract.Contract
+	contract       *contract.EtherAPIs
 	accountManager *accounts.Manager
 	signer         accounts.Account
 }
 
-func NewCharger(signer accounts.Account, txPool *core.TxPool, contract *contract.Contract, am *accounts.Manager) *Charger {
+func NewCharger(signer accounts.Account, txPool *core.TxPool, contract *contract.EtherAPIs, am *accounts.Manager) *Charger {
 	return &Charger{txPool: txPool, contract: contract, accountManager: am, signer: signer}
 }
 
 func (c *Charger) Charge(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
-	tx, err := c.contract.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
-	if err != nil {
-		return common.Hash{}, err
-	}
+	/*	tx, err := c.contract.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	sig, err := c.accountManager.Sign(c.signer, tx.SigHash().Bytes())
-	if err != nil {
-		return common.Hash{}, err
-	}
+		sig, err := c.accountManager.Sign(c.signer, tx.SigHash().Bytes())
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	signedTx, err := tx.WithSignature(sig)
-	if err != nil {
-		return common.Hash{}, err
-	}
+		signedTx, err := tx.WithSignature(sig)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	err = c.txPool.Add(signedTx)
-	if err != nil {
-		return common.Hash{}, err
-	}
+		err = c.txPool.Add(signedTx)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	return signedTx.Hash(), nil
+		return signedTx.Hash(), nil*/
+	return common.Hash{}, errors.New("not implemented")
 }

@@ -15,13 +15,13 @@ func TestDeploymentAndIntegration(t *testing.T) {
 	// generate new key
 	key := crypto.NewKey(rand.Reader)
 	// init new simulated backend
-	sim := backends.NewSimulatedBackend(core.GenesisAccount{key.Address, big.NewInt(10000000000)})
+	sim := backends.NewSimulatedBackend(core.GenesisAccount{Address: key.Address, Balance: big.NewInt(10000000000)})
 
 	// created authenticator
 	auth := bind.NewKeyedTransactor(key)
 
 	// deploy the contract
-	_, _, api, err := DeployEtherApis(auth, sim)
+	_, _, api, err := DeployEtherAPIs(auth, sim)
 
 	// use a session based approach so that we do not need
 	// to repass these settings all the time.

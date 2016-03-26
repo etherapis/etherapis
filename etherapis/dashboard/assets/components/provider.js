@@ -95,7 +95,7 @@ var Service = React.createClass({
 							<tr><td className="text-center"><i className="fa fa-user"></i></td><td>Owner</td><td style={{width: "100%"}}><Address address={this.props.service.owner}/></td></tr>
 							<tr><td className="text-center"><i className="fa fa-link"></i></td><td>Endpoint</td><td>{this.props.service.endpoint}</td></tr>
 							<tr><td className="text-center">&Xi;</td><td>Price</td><td>{formatBalance(this.props.service.price)}</td></tr>
-							<tr><td className="text-center"><i className="fa fa-ban"></i></td><td>Cancellation</td><td>{moment.duration(this.props.service.cancellationTime, "seconds").humanize()} ({this.props.service.cancellationTime} secs)</td></tr>
+							<tr><td className="text-center"><i className="fa fa-ban"></i></td><td>Cancellation</td><td>{moment.duration(this.props.service.cancellation, "seconds").humanize()} ({this.props.service.cancellation} secs)</td></tr>
 						</tbody>
 					</table>
 					<table className="table table-striped table-condensed">

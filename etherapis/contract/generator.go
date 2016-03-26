@@ -1,3 +1,3 @@
-//go:generate abigen --abi ./contract.abi --pkg contract --type EtherApis --out ./generated_contract.go --bin ./contract.bin
+//go:generate abigen --sol ./contract.sol --exc Subscriptions,ServiceProviders --pkg contract --out ./contract.go
 
 package contract
