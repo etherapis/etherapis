@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"math/big"
@@ -32,7 +33,8 @@ var (
 	chargeFlag = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
 
 	// Testing and admin flags
-	signFlag = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
+	signFlag   = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
+	deployFlag = flag.Bool("deploy", false, "Deploys a new version of the EtherAPIs contract")
 )
 
 func main() {
@@ -51,7 +53,7 @@ func main() {
 	}
 	// Start the Ether APIs client and unlock all used accounts
 	log15.Info("Joining Ethereum network...")
-	client, err := etherapis.New(datadir, geth.TestNet, common.Address{})
+	client, err := etherapis.New(datadir, geth.TestNet, common.HexToAddress("0x423df8f2f6a9e87dc8b40df296010a8ade0c52ba"))
 	if err != nil {
 		log15.Crit("Failed to create Ether APIs client", "error", err)
 		return
@@ -60,6 +62,21 @@ func main() {
 	if err := client.Unlock(*passwordFlag); err != nil {
 		log15.Crit("Failed to unlock accounts", "error", err)
 		return
+	}
+	// Deploy a new contract if it was requested
+	if *deployFlag {
+		accounts, _ := client.ListAccounts()
+		if len(accounts) == 0 {
+			log15.Crit("Cannot deploy new contract without a valid account")
+			return
+		}
+		log15.Warn("Deploying new EtherAPIs contract...", "owner", accounts[0].Hex())
+		address, tx, err := client.Deploy(accounts[0])
+		if err != nil {
+			log15.Crit("Failed to deploy new contract", "error", err)
+			return
+		}
+		log15.Warn("New contract deployed", "address", address.Hex(), "transaction", tx.Hash().Hex())
 	}
 	// Create the etherapis dashboard and run it
 	if *dashboardFlag != 0 {
@@ -209,35 +226,36 @@ func (c *testCharger) Charge(from common.Address, serviceId *big.Int, amount *bi
 
 type Charger struct {
 	txPool         *core.TxPool
-	contract       *contract.Contract
+	contract       *contract.EtherAPIs
 	accountManager *accounts.Manager
 	signer         accounts.Account
 }
 
-func NewCharger(signer accounts.Account, txPool *core.TxPool, contract *contract.Contract, am *accounts.Manager) *Charger {
+func NewCharger(signer accounts.Account, txPool *core.TxPool, contract *contract.EtherAPIs, am *accounts.Manager) *Charger {
 	return &Charger{txPool: txPool, contract: contract, accountManager: am, signer: signer}
 }
 
 func (c *Charger) Charge(from common.Address, serviceId *big.Int, nonce uint64, amount *big.Int, signature []byte) (common.Hash, error) {
-	tx, err := c.contract.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
-	if err != nil {
-		return common.Hash{}, err
-	}
+	/*	tx, err := c.contract.Claim(c.signer.Address, from, serviceId, nonce, amount, signature)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	sig, err := c.accountManager.Sign(c.signer, tx.SigHash().Bytes())
-	if err != nil {
-		return common.Hash{}, err
-	}
+		sig, err := c.accountManager.Sign(c.signer, tx.SigHash().Bytes())
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	signedTx, err := tx.WithSignature(sig)
-	if err != nil {
-		return common.Hash{}, err
-	}
+		signedTx, err := tx.WithSignature(sig)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	err = c.txPool.Add(signedTx)
-	if err != nil {
-		return common.Hash{}, err
-	}
+		err = c.txPool.Add(signedTx)
+		if err != nil {
+			return common.Hash{}, err
+		}
 
-	return signedTx.Hash(), nil
+		return signedTx.Hash(), nil*/
+	return common.Hash{}, errors.New("not implemented")
 }

@@ -1,35 +1,81 @@
 package contract
 
-import "testing"
+import (
+	"crypto/rand"
+	"math/big"
+	"testing"
 
-func TestChannels(t *testing.T) {
-	/*
-		var mux event.TypeMux
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/crypto"
+)
 
-		db, _ := ethdb.NewMemDatabase()
-		statedb, _ := state.New(common.Hash{}, db)
-		stateFn := func() *state.StateDB {
-			return statedb
-		}
+func TestDeploymentAndIntegration(t *testing.T) {
+	// generate new key
+	key := crypto.NewKey(rand.Reader)
+	// init new simulated backend
+	sim := backends.NewSimulatedBackend(core.GenesisAccount{Address: key.Address, Balance: big.NewInt(10000000000)})
 
-		key1, _ := crypto.GenerateKey()
-		key2, _ := crypto.GenerateKey()
-		to := crypto.PubkeyToAddress(key2.PublicKey)
+	// created authenticator
+	auth := bind.NewKeyedTransactor(key)
 
-		contract, err := Fetch(db, &mux, stateFn)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fmt.Println("methods:", contract.abi.Methods)
-		fmt.Println("events:", contract.abi.Events)
-		fmt.Println("\n\n")
+	// deploy the contract
+	_, _, api, err := DeployEtherAPIs(auth, sim)
 
-		tx, err := contract.NewChannel(key1, to, new(big.Int).Mul(big.NewInt(10), common.Ether), func(c *Channel) {
-			fmt.Println("new  channel created", c)
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		fmt.Println(tx)
-	*/
+	// use a session based approach so that we do not need
+	// to repass these settings all the time.
+	session := &EtherApisSession{
+		Contract: api,
+		CallOpts: bind.CallOpts{
+			Pending: true,
+		},
+		TransactOpts: bind.TransactOpts{
+			From:     auth.From,
+			Signer:   auth.Signer,
+			GasLimit: big.NewInt(400000),
+		},
+	}
+
+	// add a new service
+	_, err = session.AddService("etherapis", "https://etherapis.io", big.NewInt(10), big.NewInt(432000))
+	if err != nil {
+		t.Error(err)
+	}
+
+	// retrieve the service
+	service, err := session.GetService(big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.Enabled {
+		t.Error("expected service to be disabled")
+	}
+
+	// enable the service
+	_, err = session.EnableService(big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err = session.GetService(big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.Enabled {
+		t.Error("expected service to be enabled")
+	}
+
+	// flag deletion
+	_, err = session.DeleteService(big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service, err = session.GetService(big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.Deleted {
+		t.Error("expected service to be deleted")
+	}
 }

@@ -31,7 +31,7 @@ var Market = React.createClass({
 									<td><small>{service.endpoint}</small></td>
 									<td><Address address={service.owner} small/></td>
 									<td className="text-nowrap text-center"><small>{formatBalance(service.price)}</small></td>
-									<td className="text-nowrap text-center"><small>{moment.duration(service.cancellationTime, "seconds").humanize()}</small></td>
+									<td className="text-nowrap text-center"><small>{moment.duration(service.cancellation, "seconds").humanize()}</small></td>
 									<td><Subscribe/></td>
 								</tr>
 							);

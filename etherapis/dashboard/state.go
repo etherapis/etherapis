@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/etherapis/etherapis/etherapis"
-	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/downloader"
@@ -37,10 +36,10 @@ type state struct {
 		Syncing *downloader.Progress // Sync progress as reported by the Ethereum downloader
 	}
 	// Services contains all the known information about registered APIs
-	Services map[string][]contract.Service
+	Services map[string][]*etherapis.Service
 
 	// Market is the full listing of globally available services
-	Market []contract.Service
+	Market []*etherapis.Service
 }
 
 // Apply injects a state diff into the current state. If the diff specifies a
@@ -119,6 +118,8 @@ func newStateServer(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 // start creates the initial dashboard state based on the current system data
 // and  starts the update loop.
 func (server *stateServer) start() {
+	var err error
+
 	node := server.eapis.Geth().Stack()
 	eth := server.eapis.Ethereum()
 
@@ -135,13 +136,15 @@ func (server *stateServer) start() {
 	origin, current, height, pulled, known := eth.Downloader().Progress()
 	server.state.Ethereum.Syncing = &downloader.Progress{origin, current, height, pulled, known}
 
-	services, _ := server.eapis.Services()
-	server.state.Services = make(map[string][]contract.Service)
+	services, _ := server.eapis.Services(false)
+	server.state.Services = make(map[string][]*etherapis.Service)
 	for account, service := range services {
 		server.state.Services[account.Hex()] = service
 	}
-	server.state.Market, _ = server.eapis.Marketplace()
-
+	server.state.Market, err = server.eapis.Marketplace()
+	if err != nil {
+		log15.Error("Failed to retrieve initial marketplace", "error", err)
+	}
 	// Register any event listeners
 	go server.loop()
 }
@@ -171,7 +174,7 @@ func (server *stateServer) loop() {
 	}
 	// Quick hack helper method to check for service updates
 	updateServices := func(update *stateUpdate) {
-		all, _ := server.eapis.Services()
+		all, _ := server.eapis.Services(true)
 		for address, services := range all {
 			if !reflect.DeepEqual(services, server.state.Services[address.Hex()]) {
 				update.Diffs = append(update.Diffs, stateDiff{Path: []string{"services", address.Hex()}, Node: services})
@@ -179,8 +182,11 @@ func (server *stateServer) loop() {
 		}
 	}
 	// Quick hack helper method to check for market updates
-	updateMarket := func(update *stateUpdate) {
-		market, _ := server.eapis.Marketplace()
+	updateMarket := func(update *stateUpdate, logger log15.Logger) {
+		market, err := server.eapis.Marketplace()
+		if err != nil {
+			logger.Error("Failed to retrieve market services", "error", err)
+		}
 		if !reflect.DeepEqual(market, server.state.Market) {
 			update.Diffs = append(update.Diffs, stateDiff{Path: []string{"market"}, Node: market})
 		}
@@ -215,7 +221,7 @@ func (server *stateServer) loop() {
 				}...)
 				updateAccounts(update)
 				updateServices(update)
-				updateMarket(update)
+				updateMarket(update, logger)
 
 			case core.PendingStateEvent:
 				// The pending state of the system changed, check if we need to update accounts

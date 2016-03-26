@@ -37,36 +37,8 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Account)
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}/transactions", handler.Transactions)
 	router.HandleFunc(base+"services/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Services)
-	router.HandleFunc(base+"subscriptions/{address}", handler.Subscriptions)
 
 	return router
-}
-
-// Subscriptions retrieves the given address' subscriptions.
-func (a *api) Subscriptions(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	addr, exist := vars["address"]
-	if !exist {
-		log15.Error("Failed to retrieve subscriptions", "error", "no address specified")
-		http.Error(w, "no address specified", http.StatusInternalServerError)
-		return
-	}
-
-	services, err := a.eapis.Contract().Subscriptions(common.HexToAddress(addr))
-	if err != nil {
-		log15.Error("Failed to retrieve subscriptions", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	out, err := json.Marshal(services)
-	if err != nil {
-		log15.Error("Failed to marshal subscriptions", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(out)
 }
 
 // Accounts retrieves the Ethereum accounts currently configured to be used by the

@@ -1,4 +1,4 @@
-// etherapis implements the Ether APIs marketplace gateway.
+// Package etherapis implements the Ether APIs marketplace gateway.
 package etherapis
 
 import (
@@ -11,6 +11,8 @@ import (
 	"github.com/etherapis/etherapis/etherapis/contract"
 	"github.com/etherapis/etherapis/etherapis/geth"
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,13 +24,16 @@ import (
 
 // EtherAPIs is the main logic behind the entire system.
 type EtherAPIs struct {
-	client   *geth.Geth         // Embedded Ethereum client
-	ethereum *eth.Ethereum      // Actual Ethereum protocol within the client
-	eventmux *event.TypeMux     // Event multiplexer to announce various happenings
-	rpcapi   *geth.API          // In-process RPC interface to the embedded client
-	password string             // Master password to use to handle local accounts
-	contract *contract.Contract // Ethereum contract handling consensus stuff
-	txlock   sync.Mutex         // Serializes transaction creation to avoid nonce collisions
+	client   *geth.Geth     // Embedded Ethereum client
+	ethereum *eth.Ethereum  // Actual Ethereum protocol within the client
+	eventmux *event.TypeMux // Event multiplexer to announce various happenings
+	rpcapi   *geth.API      // In-process RPC interface to the embedded client
+	password string         // Master password to use to handle local accounts
+
+	contract *contract.EtherAPIs // Ethereum contract handling the matketplace consensus
+	signer   bind.SignerFn       // Signer to authorize transactions on the contract
+
+	txlock sync.Mutex // Serializes transaction creation to avoid nonce collisions
 }
 
 // New creates a new Ether APIs instance, connects with it to the Ethereum network
@@ -52,7 +57,11 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		return nil, err
 	}
 	// Assemble an interface around the consensus contract
-	contract, err := contract.New(ethereum.ChainDb(), ethereum.EventMux(), ethereum.BlockChain(), ethereum.AccountManager(), ethereum.Miner().Pending)
+	rpcClient, err := client.Stack().Attach()
+	if err != nil {
+		return nil, err
+	}
+	contract, err := contract.NewEtherAPIs(address, backends.NewRPCBackend(rpcClient))
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +72,32 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		eventmux: client.Stack().EventMux(),
 		rpcapi:   api,
 		contract: contract,
+		signer: func(from common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			signature, err := ethereum.AccountManager().Sign(accounts.Account{Address: from}, tx.SigHash().Bytes())
+			if err != nil {
+				return nil, err
+			}
+			return tx.WithSignature(signature)
+		},
 	}, nil
+}
+
+// Deploy deploys a fresh instance of the EtherAPIs contract, returning the
+// transaction seeded into the network.
+func (eapis *EtherAPIs) Deploy(from common.Address) (common.Address, *types.Transaction, error) {
+	rpc, err := eapis.client.Stack().Attach()
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+	auth := &bind.TransactOpts{
+		From:   from,
+		Signer: eapis.signer,
+	}
+	target, tx, etherapis, err := contract.DeployEtherAPIs(auth, backends.NewRPCBackend(rpc))
+	if err == nil {
+		eapis.contract = etherapis
+	}
+	return target, tx, err
 }
 
 // Close terminates the EtherAPIs instance along with all held resources.
@@ -150,23 +184,6 @@ func (eapis *EtherAPIs) DeleteAccount(account common.Address) error {
 	return nil
 }
 
-// Account represents an Ethereum account.
-type Account struct {
-	Nonce        uint64         `json:"nonce"`
-	Balance      *big.Int       `json:"balance"`
-	Change       *big.Int       `json:"change"`
-	Transactions []*Transaction `json:"transactions"`
-}
-
-// Transaction represents an Ethereum transaction.
-type Transaction struct {
-	Hash   common.Hash    `json:"hash"`
-	From   common.Address `json:"from"`
-	To     common.Address `json:"to"`
-	Amount *big.Int       `json:"amount"`
-	Fees   *big.Int       `json:"fees"`
-}
-
 // RetrieveAccount returns the data associated with the account.
 func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	state, _ := eapis.ethereum.BlockChain().State()
@@ -176,10 +193,14 @@ func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	for _, tx := range pendBlock.Transactions() {
 		from, _ := tx.From()
 		if from == account || (tx.To() != nil && *tx.To() == account) {
+			var to common.Address
+			if tx.To() != nil {
+				to = *tx.To()
+			}
 			txs = append(txs, &Transaction{
 				Hash:   tx.Hash(),
 				From:   from,
-				To:     *tx.To(),
+				To:     to,
 				Amount: tx.Value(),
 				Fees:   new(big.Int).Mul(tx.Gas(), tx.GasPrice()),
 			})
@@ -248,37 +269,94 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 
 // CreateService registers a new service into the API marketplace.
 func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, price *big.Int, cancel uint64) (*types.Transaction, error) {
-	tx, err := eapis.contract.AddService(owner, name, url, price, cancel)
-	if err != nil {
-		return nil, err
+	auth := &bind.TransactOpts{
+		From:   owner,
+		Signer: eapis.signer,
 	}
-	if err := eapis.Ethereum().TxPool().Add(tx); err != nil {
-		return nil, err
-	}
-	return tx, nil
+	return eapis.contract.AddService(auth, name, url, price, big.NewInt(int64(cancel)))
 }
 
 // Services retrieves a map of locally owned services, grouped by owner account.
-func (eapis *EtherAPIs) Services() (map[common.Address][]contract.Service, error) {
+func (eapis *EtherAPIs) Services(pending bool) (map[common.Address][]*Service, error) {
 	// Fetch all the accounts owned by this node
 	addresses, err := eapis.ListAccounts()
 	if err != nil {
 		return nil, err
 	}
+	// Create a pre-configured session to not have to pass the flags around
+	session := &contract.EtherAPIsSession{
+		Contract: eapis.contract,
+		CallOpts: bind.CallOpts{
+			Pending: pending,
+		},
+	}
 	// For each address, retrieves all the registered services
-	services := make(map[common.Address][]contract.Service)
+	services := make(map[common.Address][]*Service)
 	for _, address := range addresses {
-		services[address], err = eapis.contract.Services(address)
+		// Retrieve the number of services belonging to a user
+		count, err := session.UserServicesLength(address)
 		if err != nil {
 			return nil, err
+		}
+		// Make sure an empty list is always reported
+		services[address] = []*Service{}
+
+		// Retrieve each of the services individually
+		for i := int64(0); i < count.Int64(); i++ {
+			// Retrieve the users Nth service
+			id, err := session.UserServices(address, big.NewInt(i))
+			if err != nil {
+				return nil, err
+			}
+			service, err := session.GetService(id)
+			if err != nil {
+				return nil, err
+			}
+			// Convert to out internal type and accumulate
+			services[address] = append(services[address], &Service{
+				ID:           id,
+				Name:         service.Name,
+				Owner:        service.Owner,
+				Endpoint:     service.Endpoint,
+				Price:        service.Price,
+				Cancellation: service.Cancellation,
+				Enabled:      service.Enabled,
+				Deleted:      service.Deleted,
+			})
 		}
 	}
 	return services, nil
 }
 
-// Marketplace retrieves all the available services from the marketplace.
-func (eapis *EtherAPIs) Marketplace() ([]contract.Service, error) {
-	return eapis.contract.AllServices()
+// Marketplace retrieves all the available services from the marketplace. It only
+// ever operates on the currently final contract state (i.e. no pending data).
+func (eapis *EtherAPIs) Marketplace() ([]*Service, error) {
+	// Retrieve the total number of services in the marketplace
+	count, err := eapis.contract.ServicesLength(nil)
+	if err != nil {
+		return nil, fmt.Errorf("servicesLength: %v", err)
+	}
+	// Retrieve each of the services individually
+	services := make([]*Service, 0, count.Int64())
+	for i := int64(0); i < count.Int64(); i++ {
+		id := big.NewInt(i)
+
+		service, err := eapis.contract.GetService(nil, id)
+		if err != nil {
+			return nil, fmt.Errorf("getService: %v", err)
+		}
+		services = append(services, &Service{
+			ID:           id,
+			Name:         service.Name,
+			Owner:        service.Owner,
+			Endpoint:     service.Endpoint,
+			Price:        service.Price,
+			Cancellation: service.Cancellation,
+			Enabled:      service.Enabled,
+			Deleted:      service.Deleted,
+		})
+	}
+	return services, nil
 }
 
 // Geth retrieves the Ethereum client through which to interact with the underlying
@@ -293,7 +371,7 @@ func (eapis *EtherAPIs) Ethereum() *eth.Ethereum {
 }
 
 // Contract retrieves the Ether APIs Ethereum contract to access the consensus data.
-func (eapis *EtherAPIs) Contract() *contract.Contract {
+func (eapis *EtherAPIs) Contract() *contract.EtherAPIs {
 	return eapis.contract
 }
 
