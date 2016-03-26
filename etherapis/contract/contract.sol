@@ -13,11 +13,18 @@ contract ServiceProviders {
 		Terms terms;
 
 		bool enabled;
+		bool deleted;
 		bool exist;
 	}
 	Service[] services;
 
+	// serviceOwner modifier throws if the invoker does not match the owner field in the
+	// service struct.
+	modifier serviceOwner(uint serviceId) { if(services[serviceId].owner == msg.sender) _ }
+
+	// NewService Event is fired when a new service has been created.
 	event NewService(string indexed name, address indexed owner, uint serviceId);
+	// UpdateService is fired when a service has been updated or flagged for deletion.
 	event UpdateService(uint indexed serviceId);
 
 	// services per user.
@@ -27,15 +34,47 @@ contract ServiceProviders {
 	// get the total length of the services.
 	function servicesLength() constant returns(uint)                 { return services.length; }
 	// get a service and return a tuple.
-	function getService(uint serviceId) constant returns(string name, address owner, string endpoint, uint price, uint cancellationTime, bool enabled) {
+	function getService(uint serviceId) constant returns(
+		string name,
+		address owner,
+		string endpoint,
+		uint price,
+		uint cancellationTime,
+		bool enabled,
+		bool deleted
+	) {
 		Service service = services[serviceId];
-		return (service.name, service.owner, service.endpoint, service.terms.price, service.terms.cancellationTime, service.enabled);
+		return (
+			service.name,
+			service.owner,
+			service.endpoint,
+			service.terms.price,
+			service.terms.cancellationTime,
+			service.enabled,
+			service.deleted
+		);
 	}
+	// delete a service.
+	function deleteService(uint serviceId) serviceOwner(serviceId) {
+		services[serviceId].deleted = true;
+		UpdateService(serviceId);
+	}
+	// enable a service
+	function enableService(uint serviceId) serviceOwner(serviceId) {
+		services[serviceId].enabled = true;
+		UpdateService(serviceId);
+	}
+	// disable a service
+	function disableService(uint serviceId) serviceOwner(serviceId) {
+		services[serviceId].enabled = false;
+		UpdateService(serviceId);
+	}
+
 	// Add a new service.
 	function addService(string name, string endpoint, uint price, uint cancellationTime) {
 		Service service = services[services.length++];
 		service.exist = true;
-		service.enabled = true;
+		service.enabled = false;
 		service.id = services.length-1;
 		service.owner = msg.sender;
 		service.name = name;
