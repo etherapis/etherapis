@@ -276,52 +276,82 @@ func (eapis *EtherAPIs) CreateService(owner common.Address, name, url string, pr
 	return eapis.contract.AddService(auth, name, url, price, big.NewInt(int64(cancel)))
 }
 
+// DeleteService sets a service to deleted, permanently removing it from all listings.
+func (eapis *EtherAPIs) DeleteService(owner common.Address, id *big.Int) (*types.Transaction, error) {
+	auth := &bind.TransactOpts{
+		From:   owner,
+		Signer: eapis.signer,
+	}
+	return eapis.contract.DeleteService(auth, id)
+}
+
+// LockService disables a service for future subscriptions.
+func (eapis *EtherAPIs) LockService(owner common.Address, id *big.Int) (*types.Transaction, error) {
+	auth := &bind.TransactOpts{
+		From:   owner,
+		Signer: eapis.signer,
+	}
+	return eapis.contract.DisableService(auth, id)
+}
+
+// UnlockService enabled a service for future subscriptions.
+func (eapis *EtherAPIs) UnlockService(owner common.Address, id *big.Int) (*types.Transaction, error) {
+	auth := &bind.TransactOpts{
+		From:   owner,
+		Signer: eapis.signer,
+	}
+	return eapis.contract.EnableService(auth, id)
+}
+
 // Services retrieves a map of locally owned services, grouped by owner account.
-func (eapis *EtherAPIs) Services(pending bool) (map[common.Address][]*Service, error) {
+func (eapis *EtherAPIs) Services() (map[common.Address][]*Service, error) {
 	// Fetch all the accounts owned by this node
 	addresses, err := eapis.ListAccounts()
 	if err != nil {
 		return nil, err
 	}
-	// Create a pre-configured session to not have to pass the flags around
-	session := &contract.EtherAPIsSession{
-		Contract: eapis.contract,
-		CallOpts: bind.CallOpts{
-			Pending: pending,
-		},
-	}
 	// For each address, retrieves all the registered services
 	services := make(map[common.Address][]*Service)
 	for _, address := range addresses {
-		// Retrieve the number of services belonging to a user
-		count, err := session.UserServicesLength(address)
+		// Retrieve the number of services belonging to a user (currently creating included)
+		count, err := eapis.contract.UserServicesLength(&bind.CallOpts{Pending: true}, address)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("userServicesLength: %v", err)
 		}
 		// Make sure an empty list is always reported
 		services[address] = []*Service{}
 
 		// Retrieve each of the services individually
 		for i := int64(0); i < count.Int64(); i++ {
-			// Retrieve the users Nth service
-			id, err := session.UserServices(address, big.NewInt(i))
+			// Retrieve the users Nth service, both pending and stable
+			id, err := eapis.contract.UserServices(&bind.CallOpts{Pending: true}, address, big.NewInt(i))
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("userServices: %v", err)
 			}
-			service, err := session.GetService(id)
+			pending, err := eapis.contract.GetService(&bind.CallOpts{Pending: true}, id)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("getService: %v", err)
 			}
+			stable, err := eapis.contract.GetService(&bind.CallOpts{Pending: false}, id)
+			creating := err != nil
+
+			if !creating && stable.Deleted {
+				continue // Ignore long deleted services
+			}
+
 			// Convert to out internal type and accumulate
 			services[address] = append(services[address], &Service{
 				ID:           id,
-				Name:         service.Name,
-				Owner:        service.Owner,
-				Endpoint:     service.Endpoint,
-				Price:        service.Price,
-				Cancellation: service.Cancellation,
-				Enabled:      service.Enabled,
-				Deleted:      service.Deleted,
+				Name:         pending.Name,
+				Owner:        pending.Owner,
+				Endpoint:     pending.Endpoint,
+				Price:        pending.Price,
+				Cancellation: pending.Cancellation,
+				Enabled:      pending.Enabled,
+
+				Creating: creating,
+				Changing: pending.Enabled != stable.Enabled,
+				Deleting: pending.Deleted,
 			})
 		}
 	}
@@ -345,6 +375,9 @@ func (eapis *EtherAPIs) Marketplace() ([]*Service, error) {
 		if err != nil {
 			return nil, fmt.Errorf("getService: %v", err)
 		}
+		if !service.Enabled || service.Deleted {
+			continue
+		}
 		services = append(services, &Service{
 			ID:           id,
 			Name:         service.Name,
@@ -352,8 +385,6 @@ func (eapis *EtherAPIs) Marketplace() ([]*Service, error) {
 			Endpoint:     service.Endpoint,
 			Price:        service.Price,
 			Cancellation: service.Cancellation,
-			Enabled:      service.Enabled,
-			Deleted:      service.Deleted,
 		})
 	}
 	return services, nil

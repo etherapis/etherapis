@@ -29,7 +29,7 @@ var Provider = React.createClass({
 				{
 					pairs.map(function(pair) {
 						return (
-							<div key={pair.first.owner + pair.first.name} className="row">
+							<div key={pair.first.id} className="row">
 								<div className="col-lg-6">
 									<Service apiurl={this.props.apiurl} service={pair.first}/>
 								</div>
@@ -84,10 +84,20 @@ var Service = React.createClass({
 	// render flattens the service stats into a UI panel.
 	render: function() {
 		return (
-			<div className={this.props.service.enabled ? "panel panel-default" : "panel panel-warning"}>
+			<div className={
+					this.props.service.creating ? "panel panel-info" :
+					this.props.service.deleting ? "panel panel-danger" :
+					!this.props.service.enabled && this.props.service.changing ? "panel panel-warning" :
+					this.props.service.enabled && this.props.service.changing ? "panel panel-success" :
+					"panel panel-default"}>
 				<div className="panel-heading">
-					<div className="pull-right"><i className={this.props.service.enabled ? "fa fa-unlock" : "fa fa-lock"}></i></div>
-					<h3 className="panel-title">{this.props.service.name}&nbsp;</h3>
+					<div className="pull-right"><i className={this.props.service.creating || this.props.service.deleting || this.props.service.changing ? "fa fa-spinner fa-spin" : (this.props.service.enabled ? "fa fa-unlock" : "fa fa-lock")}></i></div>
+					<h3 className="panel-title">{this.props.service.name}{
+						this.props.service.creating ? " – Registering..." :
+						this.props.service.deleting ? " – Deleting..." :
+						!this.props.service.enabled && this.props.service.changing ? " – Disabling..." :
+						this.props.service.enabled && this.props.service.changing ? " – Enabling..." :
+					null }</h3>
 				</div>
 				<div className="panel-body" id="services">
 					<table className="table table-condensed">
@@ -123,17 +133,20 @@ var Service = React.createClass({
 							</tr>
 						</tbody>
 					</table>
-					<div className="clearfix">
-						<hr style={{margin: "10px 0"}}/>
-						<div className="pull-right">
-							{this.props.service.enabled ?
-								<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmLock}><i className="fa fa-lock"></i> Disable</a> :
-								<a href="#" className="btn btn-sm btn-success" onClick={this.confirmUnlock}><i className="fa fa-unlock"></i> Enable</a>
-							}
-							&nbsp;
-							<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-times"></i> Delete</a>
+					{
+						this.props.service.creating || this.props.service.deleting || this.props.service.changing ? null :
+						<div className="clearfix">
+							<hr style={{margin: "10px 0"}}/>
+							<div className="pull-right">
+								{this.props.service.enabled ?
+									<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmLock}><i className="fa fa-lock"></i> Disable</a> :
+									<a href="#" className="btn btn-sm btn-success" onClick={this.confirmUnlock}><i className="fa fa-unlock"></i> Enable</a>
+								}
+								&nbsp;
+								<a href="#" className="btn btn-sm btn-danger" onClick={this.confirmDelete}><i className="fa fa-times"></i> Delete</a>
+							</div>
 						</div>
-					</div>
+					}
 					<UnlockConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "unlock"} abort={this.abortAction}/>
 					<LockConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "lock"} abort={this.abortAction}/>
 					<DeleteConfirm apiurl={this.props.apiurl} service={this.props.service} hide={this.state.action != "delete"} abort={this.abortAction}/>
@@ -162,12 +175,19 @@ var UnlockConfirm = React.createClass({
 		// Show the spinner until something happens
 		this.setState({progress: true});
 
-		// Execute the service locking
-		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+		// Execute the service unlocking
+		var form = new FormData();
+		form.append("action", "unlock");
+
+		$.ajax({type: "POST", url: this.props.apiurl + "/" + this.props.service.owner + "/" + this.props.service.id, cache: false, data: form, processData: false, contentType: false,
+			success: function(data) {
+				this.setState({progress: false, failure: null});
+				this.props.abort();
+			}.bind(this),
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});
 			}.bind(this),
-		});*/
+		});
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
@@ -217,11 +237,18 @@ var LockConfirm = React.createClass({
 		this.setState({progress: true});
 
 		// Execute the service locking
-		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+		var form = new FormData();
+		form.append("action", "lock");
+
+		$.ajax({type: "POST", url: this.props.apiurl + "/" + this.props.service.owner + "/" + this.props.service.id, cache: false, data: form, processData: false, contentType: false,
+			success: function(data) {
+				this.setState({progress: false, failure: null});
+				this.props.abort();
+			}.bind(this),
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});
 			}.bind(this),
-		});*/
+		});
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {
@@ -269,12 +296,16 @@ var DeleteConfirm = React.createClass({
 		// Show the spinner until something happens
 		this.setState({progress: true});
 
-		// Execute the account deletion request
-		/*$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.name, cache: false,
+		// Execute the service deletion request
+		$.ajax({type: "DELETE", url: this.props.apiurl + "/" + this.props.service.owner + "/" + this.props.service.id, cache: false,
+			success: function(data) {
+				this.setState({progress: false, failure: null});
+				this.props.abort();
+			}.bind(this),
 			error: function(xhr, status, err) {
 				this.setState({progress: false, failure: xhr.responseText});
 			}.bind(this),
-		});*/
+		});
 	},
 	// render flattens the account stats into a UI panel.
 	render: function() {

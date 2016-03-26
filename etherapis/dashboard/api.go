@@ -37,6 +37,7 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Account)
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}/transactions", handler.Transactions)
 	router.HandleFunc(base+"services/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Services)
+	router.HandleFunc(base+"services/{address:0(x|X)[0-9a-fA-F]{40}}/{id:[0-9]+}", handler.Services)
 
 	return router
 }
@@ -177,7 +178,7 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
 	switch {
-	case r.Method == "POST":
+	case r.Method == "POST" && len(params["id"]) == 0:
 		// Create a brand new service based on parameters
 		var (
 			owner = common.HexToAddress(params["address"])
@@ -203,6 +204,37 @@ func (a *api) Services(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write([]byte(fmt.Sprintf("0x%x", tx.Hash())))
+
+	case r.Method == "POST" && len(params["id"]) > 0:
+		// Modify the status of an existing service
+		id, _ := new(big.Int).SetString(params["id"], 10)
+
+		switch r.FormValue("action") {
+		case "lock":
+			if _, err := a.eapis.LockService(common.HexToAddress(params["address"]), id); err != nil {
+				log15.Error("Failed to lock service", "id", id, "owner", params["address"], "error", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		case "unlock":
+			if _, err := a.eapis.UnlockService(common.HexToAddress(params["address"]), id); err != nil {
+				log15.Error("Failed to unlock service", "id", id, "owner", params["address"], "error", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		default:
+			http.Error(w, "Unsupported service action: "+r.FormValue("action"), http.StatusMethodNotAllowed)
+		}
+
+	case r.Method == "DELETE":
+		// Delete the service and return an error if something goes wrong
+		id, _ := new(big.Int).SetString(params["id"], 10)
+
+		if _, err := a.eapis.DeleteService(common.HexToAddress(params["address"]), id); err != nil {
+			log15.Error("Failed to delete service", "id", id, "owner", params["address"], "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 	default:
 		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
