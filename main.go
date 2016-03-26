@@ -33,7 +33,8 @@ var (
 	chargeFlag = flag.Duration("charge", time.Minute, "Auto charge interval to collect pending fees")
 
 	// Testing and admin flags
-	signFlag = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
+	signFlag   = flag.String("sign", "", "Signs the given json input (e.g. {'provider':'0x', 'amount':0, 'nonce': 0}")
+	deployFlag = flag.Bool("deploy", false, "Deploys a new version of the EtherAPIs contract")
 )
 
 func main() {
@@ -52,7 +53,7 @@ func main() {
 	}
 	// Start the Ether APIs client and unlock all used accounts
 	log15.Info("Joining Ethereum network...")
-	client, err := etherapis.New(datadir, geth.TestNet, common.Address{})
+	client, err := etherapis.New(datadir, geth.TestNet, common.HexToAddress("0x423df8f2f6a9e87dc8b40df296010a8ade0c52ba"))
 	if err != nil {
 		log15.Crit("Failed to create Ether APIs client", "error", err)
 		return
@@ -61,6 +62,21 @@ func main() {
 	if err := client.Unlock(*passwordFlag); err != nil {
 		log15.Crit("Failed to unlock accounts", "error", err)
 		return
+	}
+	// Deploy a new contract if it was requested
+	if *deployFlag {
+		accounts, _ := client.ListAccounts()
+		if len(accounts) == 0 {
+			log15.Crit("Cannot deploy new contract without a valid account")
+			return
+		}
+		log15.Warn("Deploying new EtherAPIs contract...", "owner", accounts[0].Hex())
+		address, tx, err := client.Deploy(accounts[0])
+		if err != nil {
+			log15.Crit("Failed to deploy new contract", "error", err)
+			return
+		}
+		log15.Warn("New contract deployed", "address", address.Hex(), "transaction", tx.Hash().Hex())
 	}
 	// Create the etherapis dashboard and run it
 	if *dashboardFlag != 0 {

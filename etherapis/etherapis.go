@@ -61,7 +61,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 	if err != nil {
 		return nil, err
 	}
-	contract, err := contract.NewEtherAPIs(common.HexToAddress("0x406e9fff90231f97b2f0d2832001b49d57df4dd2"), backends.NewRPCBackend(rpcClient))
+	contract, err := contract.NewEtherAPIs(address, backends.NewRPCBackend(rpcClient))
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +80,24 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 			return tx.WithSignature(signature)
 		},
 	}, nil
+}
+
+// Deploy deploys a fresh instance of the EtherAPIs contract, returning the
+// transaction seeded into the network.
+func (eapis *EtherAPIs) Deploy(from common.Address) (common.Address, *types.Transaction, error) {
+	rpc, err := eapis.client.Stack().Attach()
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+	auth := &bind.TransactOpts{
+		From:   from,
+		Signer: eapis.signer,
+	}
+	target, tx, etherapis, err := contract.DeployEtherAPIs(auth, backends.NewRPCBackend(rpc))
+	if err == nil {
+		eapis.contract = etherapis
+	}
+	return target, tx, err
 }
 
 // Close terminates the EtherAPIs instance along with all held resources.
@@ -175,10 +193,14 @@ func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 	for _, tx := range pendBlock.Transactions() {
 		from, _ := tx.From()
 		if from == account || (tx.To() != nil && *tx.To() == account) {
+			var to common.Address
+			if tx.To() != nil {
+				to = *tx.To()
+			}
 			txs = append(txs, &Transaction{
 				Hash:   tx.Hash(),
 				From:   from,
-				To:     *tx.To(),
+				To:     to,
 				Amount: tx.Value(),
 				Fees:   new(big.Int).Mul(tx.Gas(), tx.GasPrice()),
 			})
