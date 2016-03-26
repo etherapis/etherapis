@@ -154,7 +154,7 @@ func componentsProviderJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "components/provider.js", size: 21898, mode: os.FileMode(436), modTime: time.Unix(1458989485, 0)}
+	info := bindataFileInfo{name: "components/provider.js", size: 21898, mode: os.FileMode(436), modTime: time.Unix(1458989627, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

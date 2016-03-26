@@ -298,6 +298,9 @@ func (eapis *EtherAPIs) Services(pending bool) (map[common.Address][]*Service, e
 		if err != nil {
 			return nil, err
 		}
+		// Make sure an empty list is always reported
+		services[address] = []*Service{}
+
 		// Retrieve each of the services individually
 		for i := int64(0); i < count.Int64(); i++ {
 			// Retrieve the users Nth service
