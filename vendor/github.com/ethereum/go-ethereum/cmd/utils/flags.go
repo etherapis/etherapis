@@ -22,11 +22,13 @@ import (
 	"io/ioutil"
 	"math"
 	"math/big"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/ethereum/ethash"
@@ -34,7 +36,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -46,6 +47,8 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/pow"
+	"github.com/ethereum/go-ethereum/release"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/whisper"
 )
@@ -173,6 +176,11 @@ var (
 		Name:  "minergpus",
 		Usage: "List of GPUs to use for mining (e.g. '0,1' will use the first two GPUs found)",
 	}
+	TargetGasLimitFlag = cli.StringFlag{
+		Name:  "targetgaslimit",
+		Usage: "Target gas limit sets the artificial target gas floor for the blocks to mine",
+		Value: params.GenesisGasLimit.String(),
+	}
 	AutoDAGFlag = cli.BoolFlag{
 		Name:  "autodag",
 		Usage: "Enable automatic DAG pregeneration",
@@ -221,6 +229,10 @@ var (
 	MetricsEnabledFlag = cli.BoolFlag{
 		Name:  metrics.MetricsEnabledFlag,
 		Usage: "Enable metrics collection and reporting",
+	}
+	FakePoWFlag = cli.BoolFlag{
+		Name:  "fakepow",
+		Usage: "Disables proof-of-work verification",
 	}
 
 	// RPC settings
@@ -281,14 +293,18 @@ var (
 		Usage: "API's offered over the WS-RPC interface",
 		Value: rpc.DefaultHTTPApis,
 	}
-	WSAllowedDomainsFlag = cli.StringFlag{
-		Name:  "wsdomains",
-		Usage: "Domains from which to accept websockets requests (can be spoofed)",
+	WSAllowedOriginsFlag = cli.StringFlag{
+		Name:  "wsorigins",
+		Usage: "Origins from which to accept websockets requests",
 		Value: "",
 	}
 	ExecFlag = cli.StringFlag{
 		Name:  "exec",
 		Usage: "Execute JavaScript statement (only in combination with console/attach)",
+	}
+	PreLoadJSFlag = cli.StringFlag{
+		Name:  "preload",
+		Usage: "Comma separated list of JavaScript files to preload into the console",
 	}
 
 	// Network Settings
@@ -490,6 +506,16 @@ func MakeNAT(ctx *cli.Context) nat.Interface {
 	return natif
 }
 
+// MakeRPCModules splits input separated by a comma and trims excessive white
+// space from the substrings.
+func MakeRPCModules(input string) []string {
+	result := strings.Split(input, ",")
+	for i, r := range result {
+		result[i] = strings.TrimSpace(r)
+	}
+	return result
+}
+
 // MakeHTTPRpcHost creates the HTTP RPC listener interface string from the set
 // command line flags, returning empty if the HTTP endpoint is disabled.
 func MakeHTTPRpcHost(ctx *cli.Context) string {
@@ -541,45 +567,36 @@ func MakeDatabaseHandles() int {
 // MakeAccountManager creates an account manager from set command line flags.
 func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
 	// Create the keystore crypto primitive, light if requested
-	scryptN := crypto.StandardScryptN
-	scryptP := crypto.StandardScryptP
-
+	scryptN := accounts.StandardScryptN
+	scryptP := accounts.StandardScryptP
 	if ctx.GlobalBool(LightKDFFlag.Name) {
-		scryptN = crypto.LightScryptN
-		scryptP = crypto.LightScryptP
+		scryptN = accounts.LightScryptN
+		scryptP = accounts.LightScryptP
 	}
-	// Assemble an account manager using the configured datadir
-	var (
-		datadir     = MustMakeDataDir(ctx)
-		keystoredir = MakeKeyStoreDir(datadir, ctx)
-		keystore    = crypto.NewKeyStorePassphrase(keystoredir, scryptN, scryptP)
-	)
-	return accounts.NewManager(keystore)
+	datadir := MustMakeDataDir(ctx)
+	keydir := MakeKeyStoreDir(datadir, ctx)
+	return accounts.NewManager(keydir, scryptN, scryptP)
 }
 
 // MakeAddress converts an account specified directly as a hex encoded string or
 // a key index in the key store to an internal account representation.
-func MakeAddress(accman *accounts.Manager, account string) (a common.Address, err error) {
+func MakeAddress(accman *accounts.Manager, account string) (accounts.Account, error) {
 	// If the specified account is a valid address, return it
 	if common.IsHexAddress(account) {
-		return common.HexToAddress(account), nil
+		return accounts.Account{Address: common.HexToAddress(account)}, nil
 	}
 	// Otherwise try to interpret the account as a keystore index
 	index, err := strconv.Atoi(account)
 	if err != nil {
-		return a, fmt.Errorf("invalid account address or index %q", account)
+		return accounts.Account{}, fmt.Errorf("invalid account address or index %q", account)
 	}
-	hex, err := accman.AddressByIndex(index)
-	if err != nil {
-		return a, fmt.Errorf("can't get account #%d (%v)", index, err)
-	}
-	return common.HexToAddress(hex), nil
+	return accman.AccountByIndex(index)
 }
 
 // MakeEtherbase retrieves the etherbase either from the directly specified
 // command line flags or from the keystore if CLI indexed.
 func MakeEtherbase(accman *accounts.Manager, ctx *cli.Context) common.Address {
-	accounts, _ := accman.Accounts()
+	accounts := accman.Accounts()
 	if !ctx.GlobalIsSet(EtherbaseFlag.Name) && len(accounts) == 0 {
 		glog.V(logger.Error).Infoln("WARNING: No etherbase set and no accounts found as default")
 		return common.Address{}
@@ -589,11 +606,11 @@ func MakeEtherbase(accman *accounts.Manager, ctx *cli.Context) common.Address {
 		return common.Address{}
 	}
 	// If the specified etherbase is a valid address, return it
-	addr, err := MakeAddress(accman, etherbase)
+	account, err := MakeAddress(accman, etherbase)
 	if err != nil {
 		Fatalf("Option %q: %v", EtherbaseFlag.Name, err)
 	}
-	return addr
+	return account.Address
 }
 
 // MakeMinerExtra resolves extradata for the miner from the set command line flags
@@ -605,22 +622,27 @@ func MakeMinerExtra(extra []byte, ctx *cli.Context) []byte {
 	return extra
 }
 
-// MakePasswordList loads up a list of password from a file specified by the
-// command line flags.
+// MakePasswordList reads password lines from the file specified by --password.
 func MakePasswordList(ctx *cli.Context) []string {
-	if path := ctx.GlobalString(PasswordFileFlag.Name); path != "" {
-		blob, err := ioutil.ReadFile(path)
-		if err != nil {
-			Fatalf("Failed to read password file: %v", err)
-		}
-		return strings.Split(string(blob), "\n")
+	path := ctx.GlobalString(PasswordFileFlag.Name)
+	if path == "" {
+		return nil
 	}
-	return nil
+	text, err := ioutil.ReadFile(path)
+	if err != nil {
+		Fatalf("Failed to read password file: %v", err)
+	}
+	lines := strings.Split(string(text), "\n")
+	// Sanitise DOS line endings.
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], "\r")
+	}
+	return lines
 }
 
 // MakeSystemNode sets up a local node, configures the services to launch and
 // assembles the P2P protocol stack.
-func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.Node {
+func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) *node.Node {
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
@@ -646,16 +668,27 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 		HTTPHost:        MakeHTTPRpcHost(ctx),
 		HTTPPort:        ctx.GlobalInt(RPCPortFlag.Name),
 		HTTPCors:        ctx.GlobalString(RPCCORSDomainFlag.Name),
-		HTTPModules:     strings.Split(ctx.GlobalString(RPCApiFlag.Name), ","),
+		HTTPModules:     MakeRPCModules(ctx.GlobalString(RPCApiFlag.Name)),
 		WSHost:          MakeWSRpcHost(ctx),
 		WSPort:          ctx.GlobalInt(WSPortFlag.Name),
-		WSDomains:       ctx.GlobalString(WSAllowedDomainsFlag.Name),
-		WSModules:       strings.Split(ctx.GlobalString(WSApiFlag.Name), ","),
+		WSOrigins:       ctx.GlobalString(WSAllowedOriginsFlag.Name),
+		WSModules:       MakeRPCModules(ctx.GlobalString(WSApiFlag.Name)),
 	}
 	// Configure the Ethereum service
 	accman := MakeAccountManager(ctx)
 
+	// initialise new random number generator
+	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// get enabled jit flag
+	jitEnabled := ctx.GlobalBool(VMEnableJitFlag.Name)
+	// if the jit is not enabled enable it for 10 pct of the people
+	if !jitEnabled && rand.Float64() < 0.1 {
+		jitEnabled = true
+		glog.V(logger.Info).Infoln("You're one of the lucky few that will try out the JIT VM (random). If you get a consensus failure please be so kind to report this incident with the block hash that failed. You can switch to the regular VM by setting --jitvm=false")
+	}
+
 	ethConf := &eth.Config{
+		ChainConfig:             MustMakeChainConfig(ctx),
 		Genesis:                 MakeGenesisBlock(ctx),
 		FastSync:                ctx.GlobalBool(FastSyncFlag.Name),
 		BlockChainVersion:       ctx.GlobalInt(BlockchainVersionFlag.Name),
@@ -668,7 +701,7 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 		ExtraData:               MakeMinerExtra(extra, ctx),
 		NatSpec:                 ctx.GlobalBool(NatspecEnabledFlag.Name),
 		DocRoot:                 ctx.GlobalString(DocRootFlag.Name),
-		EnableJit:               ctx.GlobalBool(VMEnableJitFlag.Name),
+		EnableJit:               jitEnabled,
 		ForceJit:                ctx.GlobalBool(VMForceJitFlag.Name),
 		GasPrice:                common.String2Big(ctx.GlobalString(GasPriceFlag.Name)),
 		GpoMinGasPrice:          common.String2Big(ctx.GlobalString(GpoMinGasPriceFlag.Name)),
@@ -701,8 +734,6 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 			ethConf.Genesis = core.TestNetGenesisBlock()
 		}
 		state.StartingNonce = 1048576 // (2**20)
-		// overwrite homestead block
-		params.HomesteadBlock = params.TestNetHomesteadBlock
 
 	case ctx.GlobalBool(DevModeFlag.Name):
 		// Override the base network stack configs
@@ -742,7 +773,11 @@ func MakeSystemNode(name, version string, extra []byte, ctx *cli.Context) *node.
 			Fatalf("Failed to register the Whisper service: %v", err)
 		}
 	}
-
+	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+		return release.NewReleaseService(ctx, relconf)
+	}); err != nil {
+		Fatalf("Failed to register the Geth release oracle service: %v", err)
+	}
 	return stack
 }
 
@@ -758,36 +793,72 @@ func SetupNetwork(ctx *cli.Context) {
 		core.BlockReward = big.NewInt(1.5e+18)
 		core.ExpDiffPeriod = big.NewInt(math.MaxInt64)
 	}
+	params.TargetGasLimit = common.String2Big(ctx.GlobalString(TargetGasLimitFlag.Name))
 }
 
-// SetupVM configured the VM package's global settings
-func SetupVM(ctx *cli.Context) {
-	vm.EnableJit = ctx.GlobalBool(VMEnableJitFlag.Name)
-	vm.ForceJit = ctx.GlobalBool(VMForceJitFlag.Name)
-	vm.SetJITCacheSize(ctx.GlobalInt(VMJitCacheFlag.Name))
+// MustMakeChainConfig reads the chain configuration from the database in ctx.Datadir.
+func MustMakeChainConfig(ctx *cli.Context) *core.ChainConfig {
+	db := MakeChainDatabase(ctx)
+	defer db.Close()
+
+	return MustMakeChainConfigFromDb(ctx, db)
+}
+
+// MustMakeChainConfigFromDb reads the chain configuration from the given database.
+func MustMakeChainConfigFromDb(ctx *cli.Context, db ethdb.Database) *core.ChainConfig {
+	genesis := core.GetBlock(db, core.GetCanonicalHash(db, 0))
+
+	if genesis != nil {
+		// Existing genesis block, use stored config if available.
+		storedConfig, err := core.GetChainConfig(db, genesis.Hash())
+		if err == nil {
+			return storedConfig
+		} else if err != core.ChainConfigNotFoundErr {
+			Fatalf("Could not make chain configuration: %v", err)
+		}
+	}
+	var homesteadBlockNo *big.Int
+	if ctx.GlobalBool(TestNetFlag.Name) {
+		homesteadBlockNo = params.TestNetHomesteadBlock
+	} else {
+		homesteadBlockNo = params.MainNetHomesteadBlock
+	}
+	return &core.ChainConfig{HomesteadBlock: homesteadBlockNo}
+}
+
+// MakeChainDatabase open an LevelDB using the flags passed to the client and will hard crash if it fails.
+func MakeChainDatabase(ctx *cli.Context) ethdb.Database {
+	var (
+		datadir = MustMakeDataDir(ctx)
+		cache   = ctx.GlobalInt(CacheFlag.Name)
+		handles = MakeDatabaseHandles()
+	)
+
+	chainDb, err := ethdb.NewLDBDatabase(filepath.Join(datadir, "chaindata"), cache, handles)
+	if err != nil {
+		Fatalf("Could not open database: %v", err)
+	}
+	return chainDb
 }
 
 // MakeChain creates a chain manager from set command line flags.
 func MakeChain(ctx *cli.Context) (chain *core.BlockChain, chainDb ethdb.Database) {
-	datadir := MustMakeDataDir(ctx)
-	cache := ctx.GlobalInt(CacheFlag.Name)
-	handles := MakeDatabaseHandles()
-
 	var err error
-	if chainDb, err = ethdb.NewLDBDatabase(filepath.Join(datadir, "chaindata"), cache, handles); err != nil {
-		Fatalf("Could not open database: %v", err)
-	}
+	chainDb = MakeChainDatabase(ctx)
+
 	if ctx.GlobalBool(OlympicFlag.Name) {
 		_, err := core.WriteTestNetGenesisBlock(chainDb)
 		if err != nil {
 			glog.Fatalln(err)
 		}
 	}
+	chainConfig := MustMakeChainConfigFromDb(ctx, chainDb)
 
-	eventMux := new(event.TypeMux)
-	pow := ethash.New()
-	//genesis := core.GenesisBlock(uint64(ctx.GlobalInt(GenesisNonceFlag.Name)), blockDB)
-	chain, err = core.NewBlockChain(chainDb, pow, eventMux)
+	pow := pow.PoW(core.FakePow{})
+	if !ctx.GlobalBool(FakePoWFlag.Name) {
+		pow = ethash.New()
+	}
+	chain, err = core.NewBlockChain(chainDb, chainConfig, pow, new(event.TypeMux))
 	if err != nil {
 		Fatalf("Could not start chainmanager: %v", err)
 	}

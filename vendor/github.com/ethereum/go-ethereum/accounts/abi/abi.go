@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"reflect"
 	"strings"
 
@@ -47,43 +48,6 @@ func JSON(reader io.Reader) (ABI, error) {
 	return abi, nil
 }
 
-// tests, tests whether the given input would result in a successful
-// call. Checks argument list count and matches input to `input`.
-func (abi ABI) pack(method Method, args ...interface{}) ([]byte, error) {
-	// variable input is the output appended at the end of packed
-	// output. This is used for strings and bytes types input.
-	var variableInput []byte
-
-	var ret []byte
-	for i, a := range args {
-		input := method.Inputs[i]
-		// pack the input
-		packed, err := input.Type.pack(a)
-		if err != nil {
-			return nil, fmt.Errorf("`%s` %v", method.Name, err)
-		}
-
-		// check for a string or bytes input type
-		switch input.Type.T {
-		case StringTy, BytesTy:
-			// calculate the offset
-			offset := len(method.Inputs)*32 + len(variableInput)
-			// set the offset
-			ret = append(ret, packNum(reflect.ValueOf(offset), UintTy)...)
-			// Append the packed output to the variable input. The variable input
-			// will be appended at the end of the input.
-			variableInput = append(variableInput, packed...)
-		default:
-			// append the packed value to the input
-			ret = append(ret, packed...)
-		}
-	}
-	// append the variable input at the end of the packed input
-	ret = append(ret, variableInput...)
-
-	return ret, nil
-}
-
 // Pack the given method name to conform the ABI. Method call's data
 // will consist of method_id, args0, arg1, ... argN. Method id consists
 // of 4 bytes and arguments are all 32 bytes.
@@ -102,11 +66,7 @@ func (abi ABI) Pack(name string, args ...interface{}) ([]byte, error) {
 		}
 		method = m
 	}
-	// Make sure arguments match up and pack them
-	if len(args) != len(method.Inputs) {
-		return nil, fmt.Errorf("argument count mismatch: %d for %d", len(args), len(method.Inputs))
-	}
-	arguments, err := abi.pack(method, args...)
+	arguments, err := method.pack(method, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +77,83 @@ func (abi ABI) Pack(name string, args ...interface{}) ([]byte, error) {
 	return append(method.Id(), arguments...), nil
 }
 
+// toGoSliceType prses the input and casts it to the proper slice defined by the ABI
+// argument in T.
+func toGoSlice(i int, t Argument, output []byte) (interface{}, error) {
+	index := i * 32
+	// The slice must, at very least be large enough for the index+32 which is exactly the size required
+	// for the [offset in output, size of offset].
+	if index+32 > len(output) {
+		return nil, fmt.Errorf("abi: cannot marshal in to go slice: insufficient size output %d require %d", len(output), index+32)
+	}
+	elem := t.Type.Elem
+
+	// first we need to create a slice of the type
+	var refSlice reflect.Value
+	switch elem.T {
+	case IntTy, UintTy, BoolTy: // int, uint, bool can all be of type big int.
+		refSlice = reflect.ValueOf([]*big.Int(nil))
+	case AddressTy: // address must be of slice Address
+		refSlice = reflect.ValueOf([]common.Address(nil))
+	case HashTy: // hash must be of slice hash
+		refSlice = reflect.ValueOf([]common.Hash(nil))
+	case FixedBytesTy:
+		refSlice = reflect.ValueOf([]byte(nil))
+	default: // no other types are supported
+		return nil, fmt.Errorf("abi: unsupported slice type %v", elem.T)
+	}
+	// get the offset which determines the start of this array ...
+	offset := int(common.BytesToBig(output[index : index+32]).Uint64())
+	if offset+32 > len(output) {
+		return nil, fmt.Errorf("abi: cannot marshal in to go slice: offset %d would go over slice boundary (len=%d)", len(output), offset+32)
+	}
+
+	slice := output[offset:]
+	// ... starting with the size of the array in elements ...
+	size := int(common.BytesToBig(slice[:32]).Uint64())
+	slice = slice[32:]
+	// ... and make sure that we've at the very least the amount of bytes
+	// available in the buffer.
+	if size*32 > len(slice) {
+		return nil, fmt.Errorf("abi: cannot marshal in to go slice: insufficient size output %d require %d", len(output), offset+32+size*32)
+	}
+
+	// reslice to match the required size
+	slice = slice[:(size * 32)]
+	for i := 0; i < size; i++ {
+		var (
+			inter        interface{}             // interface type
+			returnOutput = slice[i*32 : i*32+32] // the return output
+		)
+
+		// set inter to the correct type (cast)
+		switch elem.T {
+		case IntTy, UintTy:
+			inter = common.BytesToBig(returnOutput)
+		case BoolTy:
+			inter = common.BytesToBig(returnOutput).Uint64() > 0
+		case AddressTy:
+			inter = common.BytesToAddress(returnOutput)
+		case HashTy:
+			inter = common.BytesToHash(returnOutput)
+		}
+		// append the item to our reflect slice
+		refSlice = reflect.Append(refSlice, reflect.ValueOf(inter))
+	}
+
+	// return the interface
+	return refSlice.Interface(), nil
+}
+
 // toGoType parses the input and casts it to the proper type defined by the ABI
 // argument in T.
 func toGoType(i int, t Argument, output []byte) (interface{}, error) {
-	index := i * 32
+	// we need to treat slices differently
+	if (t.Type.IsSlice || t.Type.IsArray) && t.Type.T != BytesTy && t.Type.T != StringTy && t.Type.T != FixedBytesTy {
+		return toGoSlice(i, t, output)
+	}
 
+	index := i * 32
 	if index+32 > len(output) {
 		return nil, fmt.Errorf("abi: cannot marshal in to go type: length insufficient %d require %d", len(output), index+32)
 	}
@@ -148,12 +180,33 @@ func toGoType(i int, t Argument, output []byte) (interface{}, error) {
 		returnOutput = output[index : index+32]
 	}
 
-	// cast bytes to abi return type
+	// convert the bytes to whatever is specified by the ABI.
 	switch t.Type.T {
-	case IntTy:
-		return common.BytesToBig(returnOutput), nil
-	case UintTy:
-		return common.BytesToBig(returnOutput), nil
+	case IntTy, UintTy:
+		bigNum := common.BytesToBig(returnOutput)
+
+		// If the type is a integer convert to the integer type
+		// specified by the ABI.
+		switch t.Type.Kind {
+		case reflect.Uint8:
+			return uint8(bigNum.Uint64()), nil
+		case reflect.Uint16:
+			return uint16(bigNum.Uint64()), nil
+		case reflect.Uint32:
+			return uint32(bigNum.Uint64()), nil
+		case reflect.Uint64:
+			return uint64(bigNum.Uint64()), nil
+		case reflect.Int8:
+			return int8(bigNum.Int64()), nil
+		case reflect.Int16:
+			return int16(bigNum.Int64()), nil
+		case reflect.Int32:
+			return int32(bigNum.Int64()), nil
+		case reflect.Int64:
+			return int64(bigNum.Int64()), nil
+		case reflect.Ptr:
+			return bigNum, nil
+		}
 	case BoolTy:
 		return common.BytesToBig(returnOutput).Uint64() > 0, nil
 	case AddressTy:
@@ -259,10 +312,12 @@ func set(dst, src reflect.Value, output Argument) error {
 			return fmt.Errorf("abi: cannot unmarshal %v in to array of elem %v", src.Type(), dstType.Elem())
 		}
 
-		if dst.Len() < output.Type.Size {
-			return fmt.Errorf("abi: cannot unmarshal src (len=%d) in to dst (len=%d)", output.Type.Size, dst.Len())
+		if dst.Len() < output.Type.SliceSize {
+			return fmt.Errorf("abi: cannot unmarshal src (len=%d) in to dst (len=%d)", output.Type.SliceSize, dst.Len())
 		}
 		reflect.Copy(dst, src)
+	case dstType.Kind() == reflect.Interface:
+		dst.Set(src)
 	default:
 		return fmt.Errorf("abi: cannot unmarshal %v in to %v", src.Type(), dst.Type())
 	}

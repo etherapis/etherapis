@@ -80,11 +80,12 @@ const (
 // included in the canonical one where as GetBlockByNumber always represents the
 // canonical chain.
 type BlockChain struct {
+	config *ChainConfig // chain & network configuration
+
 	hc           *HeaderChain
 	chainDb      ethdb.Database
 	eventMux     *event.TypeMux
 	genesisBlock *types.Block
-	vmConfig     *vm.Config
 
 	mu      sync.RWMutex // global mutex for locking chain operations
 	chainmu sync.RWMutex // blockchain insertion lock
@@ -113,13 +114,14 @@ type BlockChain struct {
 // NewBlockChain returns a fully initialised block chain using information
 // available in the database. It initialiser the default Ethereum Validator and
 // Processor.
-func NewBlockChain(chainDb ethdb.Database, pow pow.PoW, mux *event.TypeMux) (*BlockChain, error) {
+func NewBlockChain(chainDb ethdb.Database, config *ChainConfig, pow pow.PoW, mux *event.TypeMux) (*BlockChain, error) {
 	bodyCache, _ := lru.New(bodyCacheLimit)
 	bodyRLPCache, _ := lru.New(bodyCacheLimit)
 	blockCache, _ := lru.New(blockCacheLimit)
 	futureBlocks, _ := lru.New(maxFutureBlocks)
 
 	bc := &BlockChain{
+		config:       config,
 		chainDb:      chainDb,
 		eventMux:     mux,
 		quit:         make(chan struct{}),
@@ -129,24 +131,21 @@ func NewBlockChain(chainDb ethdb.Database, pow pow.PoW, mux *event.TypeMux) (*Bl
 		futureBlocks: futureBlocks,
 		pow:          pow,
 	}
-	bc.SetValidator(NewBlockValidator(bc, pow))
-	bc.SetProcessor(NewStateProcessor(bc))
+	bc.SetValidator(NewBlockValidator(config, bc, pow))
+	bc.SetProcessor(NewStateProcessor(config, bc))
 
 	gv := func() HeaderValidator { return bc.Validator() }
 	var err error
-	bc.hc, err = NewHeaderChain(chainDb, gv, bc.getProcInterrupt)
+	bc.hc, err = NewHeaderChain(chainDb, config, gv, bc.getProcInterrupt)
 	if err != nil {
 		return nil, err
 	}
 
 	bc.genesisBlock = bc.GetBlockByNumber(0)
 	if bc.genesisBlock == nil {
-		bc.genesisBlock, err = WriteDefaultGenesisBlock(chainDb)
-		if err != nil {
-			return nil, err
-		}
-		glog.V(logger.Info).Infoln("WARNING: Wrote default ethereum genesis block")
+		return nil, ErrNoGenesis
 	}
+
 	if err := bc.loadLastState(); err != nil {
 		return nil, err
 	}
@@ -161,10 +160,6 @@ func NewBlockChain(chainDb ethdb.Database, pow pow.PoW, mux *event.TypeMux) (*Bl
 	// Take ownership of this particular state
 	go bc.update()
 	return bc, nil
-}
-
-func (self *BlockChain) SetConfig(vmConfig *vm.Config) {
-	self.vmConfig = vmConfig
 }
 
 func (self *BlockChain) getProcInterrupt() bool {
@@ -683,7 +678,7 @@ func (self *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain
 				}
 			}
 			// Write all the data out into the database
-			if err := WriteBody(self.chainDb, block.Hash(), &types.Body{block.Transactions(), block.Uncles()}); err != nil {
+			if err := WriteBody(self.chainDb, block.Hash(), block.Body()); err != nil {
 				errs[index] = fmt.Errorf("failed to write block body: %v", err)
 				atomic.AddInt32(&failed, 1)
 				glog.Fatal(errs[index])
@@ -896,7 +891,7 @@ func (self *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 			return i, err
 		}
 		// Process block using the parent state as reference point.
-		receipts, logs, usedGas, err := self.processor.Process(block, statedb, self.vmConfig)
+		receipts, logs, usedGas, err := self.processor.Process(block, statedb, self.config.VmConfig)
 		if err != nil {
 			reportBlock(block, err)
 			return i, err
@@ -998,7 +993,7 @@ func (self *BlockChain) reorg(oldBlock, newBlock *types.Block) error {
 	// first reduce whoever is higher bound
 	if oldBlock.NumberU64() > newBlock.NumberU64() {
 		// reduce old chain
-		for oldBlock = oldBlock; oldBlock != nil && oldBlock.NumberU64() != newBlock.NumberU64(); oldBlock = self.GetBlock(oldBlock.ParentHash()) {
+		for ; oldBlock != nil && oldBlock.NumberU64() != newBlock.NumberU64(); oldBlock = self.GetBlock(oldBlock.ParentHash()) {
 			oldChain = append(oldChain, oldBlock)
 			deletedTxs = append(deletedTxs, oldBlock.Transactions()...)
 
@@ -1006,7 +1001,7 @@ func (self *BlockChain) reorg(oldBlock, newBlock *types.Block) error {
 		}
 	} else {
 		// reduce new chain and append new chain blocks for inserting later on
-		for newBlock = newBlock; newBlock != nil && newBlock.NumberU64() != oldBlock.NumberU64(); newBlock = self.GetBlock(newBlock.ParentHash()) {
+		for ; newBlock != nil && newBlock.NumberU64() != oldBlock.NumberU64(); newBlock = self.GetBlock(newBlock.ParentHash()) {
 			newChain = append(newChain, newBlock)
 		}
 	}
@@ -1218,3 +1213,6 @@ func (self *BlockChain) GetBlockHashesFromHash(hash common.Hash, max uint64) []c
 func (self *BlockChain) GetHeaderByNumber(number uint64) *types.Header {
 	return self.hc.GetHeaderByNumber(number)
 }
+
+// Config retrieves the blockchain's chain configuration.
+func (self *BlockChain) Config() *ChainConfig { return self.config }
