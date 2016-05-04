@@ -3,7 +3,6 @@ package etherapis
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -15,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/params"
@@ -73,7 +71,7 @@ func New(datadir string, network geth.EthereumNetwork, address common.Address) (
 		rpcapi:   api,
 		contract: contract,
 		signer: func(from common.Address, tx *types.Transaction) (*types.Transaction, error) {
-			signature, err := ethereum.AccountManager().Sign(accounts.Account{Address: from}, tx.SigHash().Bytes())
+			signature, err := ethereum.AccountManager().Sign(from, tx.SigHash().Bytes())
 			if err != nil {
 				return nil, err
 			}
@@ -110,17 +108,14 @@ func (eapis *EtherAPIs) Close() error {
 func (eapis *EtherAPIs) Unlock(password string) error {
 	// Retrieve the list of known accounts
 	manager := eapis.ethereum.AccountManager()
+	accounts := manager.Accounts()
 
-	accounts, err := manager.Accounts()
-	if err != nil {
-		return err
-	}
 	// Unlock each of them using the master password
 	for _, account := range accounts {
 		address := fmt.Sprintf("0x%x", account.Address)
 
 		log15.Debug("Unlocking account...", "account", address)
-		if err := manager.Unlock(account.Address, password); err != nil {
+		if err := manager.Unlock(account, password); err != nil {
 			return fmt.Errorf("password rejected for %s", address)
 		}
 	}
@@ -136,7 +131,7 @@ func (eapis *EtherAPIs) CreateAccount() (common.Address, error) {
 	if err != nil {
 		return common.Address{}, err
 	}
-	if err := eapis.ethereum.AccountManager().Unlock(account.Address, eapis.password); err != nil {
+	if err := eapis.ethereum.AccountManager().Unlock(account, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly created account failed to unlock: %v", err))
 	}
 	go eapis.eventmux.Post(NewAccountEvent{account.Address})
@@ -147,40 +142,32 @@ func (eapis *EtherAPIs) CreateAccount() (common.Address, error) {
 // ImportAccount inserts an encrypted external account into the local keystore
 // by first decrypting it, and then inserting using the local master password.
 func (eapis *EtherAPIs) ImportAccount(keyjson []byte, password string) (common.Address, error) {
-	key, err := crypto.DecryptKey(keyjson, password)
+	keystore := eapis.ethereum.AccountManager()
+
+	account, err := keystore.Import(keyjson, password, eapis.password)
 	if err != nil {
 		return common.Address{}, err
 	}
-	if eapis.ethereum.AccountManager().HasAccount(key.Address) {
-		return common.Address{}, errors.New("account already exists")
-	}
-	if err := eapis.client.Keystore().StoreKey(key, eapis.password); err != nil {
-		return common.Address{}, err
-	}
-	if err := eapis.ethereum.AccountManager().Unlock(key.Address, eapis.password); err != nil {
+	if err := eapis.ethereum.AccountManager().Unlock(account, eapis.password); err != nil {
 		panic(fmt.Sprintf("Newly imported account failed to unlock: %v", err))
 	}
-	go eapis.eventmux.Post(NewAccountEvent{key.Address})
+	go eapis.eventmux.Post(NewAccountEvent{account.Address})
 
-	return key.Address, nil
+	return account.Address, nil
 }
 
 // ExportAccount retrieves an account from the key store and exports it using
 // a different password.
-func (eapis *EtherAPIs) ExportAccount(account common.Address, password string) ([]byte, error) {
-	key, err := eapis.client.Keystore().GetKey(account, eapis.password)
-	if err != nil {
-		return nil, err
-	}
-	return crypto.EncryptKey(key, password, crypto.StandardScryptN, crypto.StandardScryptP)
+func (eapis *EtherAPIs) ExportAccount(address common.Address, password string) ([]byte, error) {
+	return eapis.ethereum.AccountManager().Export(accounts.Account{Address: address}, eapis.password, password)
 }
 
 // DeleteAccount irreversibly deletes an account from the key store.
-func (eapis *EtherAPIs) DeleteAccount(account common.Address) error {
-	if err := eapis.ethereum.AccountManager().DeleteAccount(account, eapis.password); err != nil {
+func (eapis *EtherAPIs) DeleteAccount(address common.Address) error {
+	if err := eapis.ethereum.AccountManager().DeleteAccount(accounts.Account{Address: address}, eapis.password); err != nil {
 		return err
 	}
-	go eapis.eventmux.Post(DroppedAccountEvent{account})
+	go eapis.eventmux.Post(DroppedAccountEvent{address})
 	return nil
 }
 
@@ -216,10 +203,8 @@ func (eapis *EtherAPIs) RetrieveAccount(account common.Address) Account {
 
 // ListAccounts retrieves the list of accounts known to etherapis.
 func (eapis *EtherAPIs) ListAccounts() ([]common.Address, error) {
-	accounts, err := eapis.ethereum.AccountManager().Accounts()
-	if err != nil {
-		return nil, err
-	}
+	accounts := eapis.ethereum.AccountManager().Accounts()
+
 	addresses := make([]common.Address, len(accounts))
 	for i, account := range accounts {
 		addresses[i] = account.Address
@@ -232,7 +217,7 @@ func (eapis *EtherAPIs) ListAccounts() ([]common.Address, error) {
 func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (common.Hash, error) {
 	// Make sure we actually own the origin account and have a valid destination
 	accman := eapis.ethereum.AccountManager()
-	if !accman.HasAccount(from) {
+	if !accman.HasAddress(from) {
 		return common.Hash{}, fmt.Errorf("unknown account: 0x%x", from.Bytes())
 	}
 	if to == (common.Address{}) {
@@ -252,7 +237,7 @@ func (eapis *EtherAPIs) Transfer(from, to common.Address, amount *big.Int) (comm
 	tx := types.NewTransaction(nonce, to, amount, gasLimit, gasPrice, nil)
 
 	// Sign the transaction and inject into the local pool for propagation
-	signature, err := accman.Sign(accounts.Account{Address: from}, tx.SigHash().Bytes())
+	signature, err := accman.Sign(from, tx.SigHash().Bytes())
 	if err != nil {
 		return common.Hash{}, err
 	}
