@@ -1,7 +1,6 @@
 package contract
 
 import (
-	"crypto/rand"
 	"math/big"
 	"testing"
 
@@ -13,12 +12,11 @@ import (
 
 func TestDeploymentAndIntegration(t *testing.T) {
 	// generate new key
-	key := crypto.NewKey(rand.Reader)
-	// init new simulated backend
-	sim := backends.NewSimulatedBackend(core.GenesisAccount{Address: key.Address, Balance: big.NewInt(10000000000)})
-
-	// created authenticator
+	key, _ := crypto.GenerateKey()
 	auth := bind.NewKeyedTransactor(key)
+
+	// init new simulated backend
+	sim := backends.NewSimulatedBackend(core.GenesisAccount{Address: auth.From, Balance: big.NewInt(10000000000)})
 
 	// deploy the contract
 	_, _, api, err := DeployEtherAPIs(auth, sim)
