@@ -214,7 +214,6 @@ type Conn struct {
 	writeFrameType int    // type of the current frame.
 	writeSeq       int    // incremented to invalidate message writers.
 	writeDeadline  time.Time
-	isWriting      bool // for best-effort concurrent write detection
 
 	// Read fields
 	readErr       error
@@ -228,7 +227,6 @@ type Conn struct {
 	readMaskKey   [4]byte
 	handlePong    func(string) error
 	handlePing    func(string) error
-	readErrCount  int
 }
 
 func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int) *Conn {
@@ -442,21 +440,8 @@ func (c *Conn) flushFrame(final bool, extra []byte) error {
 		}
 	}
 
-	// Write the buffers to the connection with best-effort detection of
-	// concurrent writes. See the concurrency section in the package
-	// documentation for more info.
-
-	if c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = true
-
+	// Write the buffers to the connection.
 	c.writeErr = c.write(c.writeFrameType, c.writeDeadline, c.writeBuf[framePos:c.writePos], extra)
-
-	if !c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = false
 
 	// Setup for next frame.
 	c.writePos = maxFrameHeaderSize
@@ -741,15 +726,13 @@ func (c *Conn) advanceFrame() (int, error) {
 			return noFrame, err
 		}
 	case CloseMessage:
-		echoMessage := []byte{}
+		c.WriteControl(CloseMessage, []byte{}, time.Now().Add(writeWait))
 		closeCode := CloseNoStatusReceived
 		closeText := ""
 		if len(payload) >= 2 {
-			echoMessage = payload[:2]
 			closeCode = int(binary.BigEndian.Uint16(payload))
 			closeText = string(payload[2:])
 		}
-		c.WriteControl(CloseMessage, echoMessage, time.Now().Add(writeWait))
 		return noFrame, &CloseError{Code: closeCode, Text: closeText}
 	}
 
@@ -767,10 +750,9 @@ func (c *Conn) handleProtocolError(message string) error {
 // There can be at most one open reader on a connection. NextReader discards
 // the previous message if the application has not already consumed it.
 //
-// Applications must break out of the application's read loop when this method
-// returns a non-nil error value. Errors returned from this method are
-// permanent. Once this method returns a non-nil error, all subsequent calls to
-// this method return the same error.
+// Errors returned from NextReader are permanent. If NextReader returns a
+// non-nil error, then all subsequent calls to NextReader return the same
+// error.
 func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 
 	c.readSeq++
@@ -786,15 +768,6 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 			return frameType, messageReader{c, c.readSeq}, nil
 		}
 	}
-
-	// Applications that do handle the error returned from this method spin in
-	// tight loop on connection failure. To help application developers detect
-	// this error, panic on repeated reads to the failed connection.
-	c.readErrCount++
-	if c.readErrCount >= 1000 {
-		panic("repeated read on failed websocket connection")
-	}
-
 	return noFrame, nil, c.readErr
 }
 

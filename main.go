@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/logger/glog"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -24,6 +25,7 @@ var (
 	// General flags
 	datadirFlag         = flag.String("datadir", "", "Path where to put the client data (\"\" = $HOME/.etherapis)")
 	loglevelFlag        = flag.Int("loglevel", 3, "Log level to use for displaying system events")
+	loglevelGethFlag    = flag.Int("loglevelgeth", 0, "Log level to use for displaying go-ethereum system events")
 	dashboardFlag       = flag.Int("dashboard", 8080, "Port number on which to run the dashboard (0 = disabled)")
 	dashboardAssetsFlag = flag.String("dashboard-assets", "", "Path to the dashboard static assets to use (empty = built in assets)")
 	passwordFlag        = flag.String("password", "", "Master password to use for account management")
@@ -42,7 +44,10 @@ func main() {
 	flag.Parse()
 
 	log15.Root().SetHandler(log15.LvlFilterHandler(log15.Lvl(*loglevelFlag), log15.StderrHandler))
-
+	if *loglevelGethFlag > 0 {
+		glog.SetV(*loglevelGethFlag)
+		glog.SetToStderr(true)
+	}
 	datadir := *datadirFlag
 	if datadir == "" {
 		datadir = filepath.Join(os.Getenv("HOME"), ".etherapis")

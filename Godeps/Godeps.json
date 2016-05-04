@@ -1,7 +1,6 @@
 {
 	"ImportPath": "github.com/etherapis/etherapis",
 	"GoVersion": "go1.6",
-	"GodepVersion": "v60",
 	"Packages": [
 		"./..."
 	],
@@ -12,228 +11,233 @@
 		},
 		{
 			"ImportPath": "github.com/codegangsta/cli",
-			"Comment": "1.2.0-215-g0ab42fd",
+			"Comment": "v1.11.1-28-g0ab42fd",
 			"Rev": "0ab42fd482c27cf2c95e7794ad3bb2082c2ab2d7"
 		},
 		{
 			"ImportPath": "github.com/ethereum/ethash",
-			"Comment": "v23.1-241-g04a60f6",
-			"Rev": "04a60f6bd0ab4eac90a52d4f80076421de1745d4"
+			"Comment": "v23.1-245-g25b32de",
+			"Rev": "25b32de0c0271065c28c3719c2bfe86959d72f0c"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/accounts",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/accounts/abi",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/accounts/abi/bind",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/accounts/abi/bind/backends",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/cmd/utils",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/common",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/common/compiler",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/common/httpclient",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/common/registrar",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/common/registrar/ethreg",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/core",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/core/state",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/core/types",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/core/vm",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/core/vm/runtime",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/crypto",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/crypto/ecies",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/crypto/randentropy",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/crypto/secp256k1",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/crypto/sha3",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/eth",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/eth/downloader",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/eth/fetcher",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/eth/filters",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/ethdb",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/event",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/event/filter",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/internal/debug",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/jsre",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/logger",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/logger/glog",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/metrics",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/miner",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/node",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/p2p",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/p2p/discover",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/p2p/nat",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/params",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/pow",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
+		},
+		{
+			"ImportPath": "github.com/ethereum/go-ethereum/release",
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/rlp",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/rpc",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/trie",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/ethereum/go-ethereum/whisper",
-			"Comment": "v1.0.1-694-g9b4a45f",
-			"Rev": "9b4a45f6e806e84105a74b14f63a44b179a74a0f"
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
 			"ImportPath": "github.com/fatih/color",
@@ -246,15 +250,15 @@
 		},
 		{
 			"ImportPath": "github.com/gorilla/context",
-			"Rev": "1ea25387ff6f684839d82767c1733ff4d4d15d0a"
+			"Rev": "1c83b3eabd45b6d76072b66b746c20815fb2872d"
 		},
 		{
 			"ImportPath": "github.com/gorilla/mux",
-			"Rev": "c9e326e2bdec29039a3761c07bece13133863e1e"
+			"Rev": "26a6070f849969ba72b72256e9f14cf519751690"
 		},
 		{
 			"ImportPath": "github.com/gorilla/websocket",
-			"Rev": "c45a635370221f34fea2d5163fd156fcb4e38e8a"
+			"Rev": "b824a5d8536651ad2d690c17e270d58855dbfd02"
 		},
 		{
 			"ImportPath": "github.com/hashicorp/golang-lru",
@@ -309,6 +313,11 @@
 			"Rev": "56b76bdf51f7708750eac80fa38b952bb9f32639"
 		},
 		{
+			"ImportPath": "github.com/microsoft/go-winio",
+			"Comment": "v0.3.1",
+			"Rev": "9f57cbbcbcb41dea496528872a4f0e37a4f7ae98"
+		},
+		{
 			"ImportPath": "github.com/pborman/uuid",
 			"Comment": "v1.0-6-g0f1a469",
 			"Rev": "0f1a46960a86dcdf5dd30d3e6568a497a997909f"
@@ -320,6 +329,10 @@
 		{
 			"ImportPath": "github.com/rcrowley/go-metrics",
 			"Rev": "51425a2415d21afadfd55cd93432c0bc69e9598d"
+		},
+		{
+			"ImportPath": "github.com/rjeczalik/notify",
+			"Rev": "5dd6205716539662f8f14ab513552b41eab69d5d"
 		},
 		{
 			"ImportPath": "github.com/robertkrimen/otto",
@@ -415,23 +428,23 @@
 		},
 		{
 			"ImportPath": "golang.org/x/net/context",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html/atom",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html/charset",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/websocket",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/sys/unix",
@@ -499,11 +512,11 @@
 		},
 		{
 			"ImportPath": "golang.org/x/tools/go/ast/astutil",
-			"Rev": "fcde77432eb91f1389e8b5be6a4d018536ceac02"
+			"Rev": "6361b5799a8e5f2ed8a234717d217fd289451c53"
 		},
 		{
 			"ImportPath": "golang.org/x/tools/imports",
-			"Rev": "fcde77432eb91f1389e8b5be6a4d018536ceac02"
+			"Rev": "6361b5799a8e5f2ed8a234717d217fd289451c53"
 		},
 		{
 			"ImportPath": "gopkg.in/fatih/set.v0",

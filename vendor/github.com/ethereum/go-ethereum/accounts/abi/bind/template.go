@@ -110,6 +110,21 @@ package {{.Package}}
 	  TransactOpts bind.TransactOpts    // Transaction auth options to use throughout this session
 	}
 
+	// {{.Type}}Raw is an auto generated low-level Go binding around an Ethereum contract.
+	type {{.Type}}Raw struct {
+	  Contract *{{.Type}} // Generic contract binding to access the raw methods on
+	}
+
+	// {{.Type}}CallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+	type {{.Type}}CallerRaw struct {
+		Contract *{{.Type}}Caller // Generic read-only contract binding to access the raw methods on
+	}
+
+	// {{.Type}}TransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+	type {{.Type}}TransactorRaw struct {
+		Contract *{{.Type}}Transactor // Generic write-only contract binding to access the raw methods on
+	}
+
 	// New{{.Type}} creates a new instance of {{.Type}}, bound to a specific deployed contract.
 	func New{{.Type}}(address common.Address, backend bind.ContractBackend) (*{{.Type}}, error) {
 	  contract, err := bind{{.Type}}(address, backend.(bind.ContractCaller), backend.(bind.ContractTransactor))
@@ -146,23 +161,56 @@ package {{.Package}}
 	  return bind.NewBoundContract(address, parsed, caller, transactor), nil
 	}
 
-	{{range .Calls}}
-		{{if .Structured}}
-			// {{.Normalized.Name}}Result is the result of the {{.Normalized.Name}} invocation."
-			type {{.Normalized.Name}}Result struct {
-					{{range .Normalized.Outputs}}{{.Name}} {{bindtype .Type}}
-					{{end}}
-			}
-		{{end}}
+	// Call invokes the (constant) contract method with params as input values and
+	// sets the output to result. The result type might be a single field for simple
+	// returns, a slice of interfaces for anonymous returns and a struct for named
+	// returns.
+	func (_{{$contract.Type}} *{{$contract.Type}}Raw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+		return _{{$contract.Type}}.Contract.{{$contract.Type}}Caller.contract.Call(opts, result, method, params...)
+	}
 
+	// Transfer initiates a plain transaction to move funds to the contract, calling
+	// its default method if one is available.
+	func (_{{$contract.Type}} *{{$contract.Type}}Raw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return _{{$contract.Type}}.Contract.{{$contract.Type}}Transactor.contract.Transfer(opts)
+	}
+
+	// Transact invokes the (paid) contract method with params as input values.
+	func (_{{$contract.Type}} *{{$contract.Type}}Raw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+		return _{{$contract.Type}}.Contract.{{$contract.Type}}Transactor.contract.Transact(opts, method, params...)
+	}
+
+	// Call invokes the (constant) contract method with params as input values and
+	// sets the output to result. The result type might be a single field for simple
+	// returns, a slice of interfaces for anonymous returns and a struct for named
+	// returns.
+	func (_{{$contract.Type}} *{{$contract.Type}}CallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+		return _{{$contract.Type}}.Contract.contract.Call(opts, result, method, params...)
+	}
+
+	// Transfer initiates a plain transaction to move funds to the contract, calling
+	// its default method if one is available.
+	func (_{{$contract.Type}} *{{$contract.Type}}TransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return _{{$contract.Type}}.Contract.contract.Transfer(opts)
+	}
+
+	// Transact invokes the (paid) contract method with params as input values.
+	func (_{{$contract.Type}} *{{$contract.Type}}TransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+		return _{{$contract.Type}}.Contract.contract.Transact(opts, method, params...)
+	}
+
+	{{range .Calls}}
 		// {{.Normalized.Name}} is a free data retrieval call binding the contract method 0x{{printf "%x" .Original.Id}}.
 		//
 		// Solidity: {{.Original.String}}
-		func (_{{$contract.Type}} *{{$contract.Type}}Caller) {{.Normalized.Name}}(opts *bind.CallOpts {{range .Normalized.Inputs}}, {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}{{.Normalized.Name}}Result,{{else}}{{range .Normalized.Outputs}}{{bindtype .Type}},{{end}}{{end}} error) {
-			var (
-				{{if .Structured}}ret = new({{.Normalized.Name}}Result){{else}}{{range $i, $_ := .Normalized.Outputs}}ret{{$i}} = new({{bindtype .Type}})
-				{{end}}{{end}}
-			)
+		func (_{{$contract.Type}} *{{$contract.Type}}Caller) {{.Normalized.Name}}(opts *bind.CallOpts {{range .Normalized.Inputs}}, {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}struct{ {{range .Normalized.Outputs}}{{.Name}} {{bindtype .Type}};{{end}} },{{else}}{{range .Normalized.Outputs}}{{bindtype .Type}},{{end}}{{end}} error) {
+			{{if .Structured}}ret := new(struct{
+				{{range .Normalized.Outputs}}{{.Name}} {{bindtype .Type}}
+				{{end}}
+			}){{else}}var (
+				{{range $i, $_ := .Normalized.Outputs}}ret{{$i}} = new({{bindtype .Type}})
+				{{end}}
+			){{end}}
 			out := {{if .Structured}}ret{{else}}{{if eq (len .Normalized.Outputs) 1}}ret0{{else}}[]interface{}{
 				{{range $i, $_ := .Normalized.Outputs}}ret{{$i}},
 				{{end}}
@@ -174,14 +222,14 @@ package {{.Package}}
 		// {{.Normalized.Name}} is a free data retrieval call binding the contract method 0x{{printf "%x" .Original.Id}}.
 		//
 		// Solidity: {{.Original.String}}
-		func (_{{$contract.Type}} *{{$contract.Type}}Session) {{.Normalized.Name}}({{range $i, $_ := .Normalized.Inputs}}{{if ne $i 0}},{{end}} {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}{{.Normalized.Name}}Result, {{else}} {{range .Normalized.Outputs}}{{bindtype .Type}},{{end}} {{end}} error) {
+		func (_{{$contract.Type}} *{{$contract.Type}}Session) {{.Normalized.Name}}({{range $i, $_ := .Normalized.Inputs}}{{if ne $i 0}},{{end}} {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}struct{ {{range .Normalized.Outputs}}{{.Name}} {{bindtype .Type}};{{end}} }, {{else}} {{range .Normalized.Outputs}}{{bindtype .Type}},{{end}} {{end}} error) {
 		  return _{{$contract.Type}}.Contract.{{.Normalized.Name}}(&_{{$contract.Type}}.CallOpts {{range .Normalized.Inputs}}, {{.Name}}{{end}})
 		}
 
 		// {{.Normalized.Name}} is a free data retrieval call binding the contract method 0x{{printf "%x" .Original.Id}}.
 		//
 		// Solidity: {{.Original.String}}
-		func (_{{$contract.Type}} *{{$contract.Type}}CallerSession) {{.Normalized.Name}}({{range $i, $_ := .Normalized.Inputs}}{{if ne $i 0}},{{end}} {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}{{.Normalized.Name}}Result, {{else}} {{range .Normalized.Outputs}}{{bindtype .Type}},{{end}} {{end}} error) {
+		func (_{{$contract.Type}} *{{$contract.Type}}CallerSession) {{.Normalized.Name}}({{range $i, $_ := .Normalized.Inputs}}{{if ne $i 0}},{{end}} {{.Name}} {{bindtype .Type}} {{end}}) ({{if .Structured}}struct{ {{range .Normalized.Outputs}}{{.Name}} {{bindtype .Type}};{{end}} }, {{else}} {{range .Normalized.Outputs}}{{bindtype .Type}},{{end}} {{end}} error) {
 		  return _{{$contract.Type}}.Contract.{{.Normalized.Name}}(&_{{$contract.Type}}.CallOpts {{range .Normalized.Inputs}}, {{.Name}}{{end}})
 		}
 	{{end}}

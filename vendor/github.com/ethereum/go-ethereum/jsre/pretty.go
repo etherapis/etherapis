@@ -177,7 +177,7 @@ func (ctx ppctx) fields(obj *otto.Object) []string {
 		seen          = make(map[string]bool)
 	)
 	add := func(k string) {
-		if seen[k] || boringKeys[k] {
+		if seen[k] || boringKeys[k] || strings.HasPrefix(k, "_") {
 			return
 		}
 		seen[k] = true
@@ -227,12 +227,20 @@ func iterOwnKeys(vm *otto.Otto, obj *otto.Object, f func(string)) {
 }
 
 func (ctx ppctx) isBigNumber(v *otto.Object) bool {
-	BigNumber, err := ctx.vm.Run("BigNumber.prototype")
-	if err != nil {
-		panic(err)
+	// Handle numbers with custom constructor.
+	if v, _ := v.Get("constructor"); v.Object() != nil {
+		if strings.HasPrefix(toString(v.Object()), "function BigNumber") {
+			return true
+		}
 	}
-	cp := constructorPrototype(v)
-	return cp != nil && cp.Value() == BigNumber
+	// Handle default constructor.
+	BigNumber, _ := ctx.vm.Object("BigNumber.prototype")
+	if BigNumber == nil {
+		return false
+	}
+	bv, _ := BigNumber.Call("isPrototypeOf", v)
+	b, _ := bv.ToBoolean()
+	return b
 }
 
 func toString(obj *otto.Object) string {

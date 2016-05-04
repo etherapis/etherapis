@@ -19,6 +19,7 @@ package eth
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -63,6 +64,8 @@ var (
 )
 
 type Config struct {
+	ChainConfig *core.ChainConfig // chain configuration
+
 	NetworkId int    // Network ID to use for selecting peers to connect to
 	Genesis   string // Genesis JSON to seed the chain database with
 	FastSync  bool   // Enables the state download based fast synchronisation algorithm
@@ -100,6 +103,7 @@ type Config struct {
 }
 
 type Ethereum struct {
+	chainConfig *core.ChainConfig
 	// Channel for shutting down the ethereum
 	shutdownChan chan bool
 
@@ -115,6 +119,7 @@ type Ethereum struct {
 	protocolManager *ProtocolManager
 	SolcPath        string
 	solc            *compiler.Solidity
+	gpo             *GasPriceOracle
 
 	GpoMinGasPrice          *big.Int
 	GpoMaxGasPrice          *big.Int
@@ -172,6 +177,7 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 		}
 		glog.V(logger.Info).Infof("Successfully wrote custom genesis block: %x", block.Hash())
 	}
+
 	// Load up a test setup if directly injected
 	if config.TestGenesisState != nil {
 		chainDb = config.TestGenesisState
@@ -227,26 +233,43 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	default:
 		eth.pow = ethash.New()
 	}
-	//genesis := core.GenesisBlock(uint64(config.GenesisNonce), stateDb)
-	eth.blockchain, err = core.NewBlockChain(chainDb, eth.pow, eth.EventMux())
-	eth.blockchain.SetConfig(&vm.Config{
+
+	// load the genesis block or write a new one if no genesis
+	// block is prenent in the database.
+	genesis := core.GetBlock(chainDb, core.GetCanonicalHash(chainDb, 0))
+	if genesis == nil {
+		genesis, err = core.WriteDefaultGenesisBlock(chainDb)
+		if err != nil {
+			return nil, err
+		}
+		glog.V(logger.Info).Infoln("WARNING: Wrote default ethereum genesis block")
+	}
+
+	if config.ChainConfig == nil {
+		return nil, errors.New("missing chain config")
+	}
+	eth.chainConfig = config.ChainConfig
+	eth.chainConfig.VmConfig = vm.Config{
 		EnableJit: config.EnableJit,
 		ForceJit:  config.ForceJit,
-	})
+	}
 
+	eth.blockchain, err = core.NewBlockChain(chainDb, eth.chainConfig, eth.pow, eth.EventMux())
 	if err != nil {
 		if err == core.ErrNoGenesis {
-			return nil, fmt.Errorf(`Genesis block not found. Please supply a genesis block with the "--genesis /path/to/file" argument`)
+			return nil, fmt.Errorf(`No chain found. Please initialise a new chain using the "init" subcommand.`)
 		}
 		return nil, err
 	}
-	newPool := core.NewTxPool(eth.EventMux(), eth.blockchain.State, eth.blockchain.GasLimit)
+	eth.gpo = NewGasPriceOracle(eth)
+
+	newPool := core.NewTxPool(eth.chainConfig, eth.EventMux(), eth.blockchain.State, eth.blockchain.GasLimit)
 	eth.txPool = newPool
 
-	if eth.protocolManager, err = NewProtocolManager(config.FastSync, config.NetworkId, eth.eventMux, eth.txPool, eth.pow, eth.blockchain, chainDb); err != nil {
+	if eth.protocolManager, err = NewProtocolManager(eth.chainConfig, config.FastSync, config.NetworkId, eth.eventMux, eth.txPool, eth.pow, eth.blockchain, chainDb); err != nil {
 		return nil, err
 	}
-	eth.miner = miner.New(eth, eth.EventMux(), eth.pow)
+	eth.miner = miner.New(eth, eth.chainConfig, eth.EventMux(), eth.pow)
 	eth.miner.SetGasPrice(config.GasPrice)
 	eth.miner.SetExtra(config.ExtraData)
 
@@ -265,17 +288,17 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   NewPublicAccountAPI(s.AccountManager()),
+			Service:   NewPublicAccountAPI(s.accountManager),
 			Public:    true,
 		}, {
 			Namespace: "personal",
 			Version:   "1.0",
-			Service:   NewPrivateAccountAPI(s.AccountManager()),
+			Service:   NewPrivateAccountAPI(s.accountManager),
 			Public:    false,
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   NewPublicBlockChainAPI(s.BlockChain(), s.Miner(), s.ChainDb(), s.EventMux(), s.AccountManager()),
+			Service:   NewPublicBlockChainAPI(s.chainConfig, s.blockchain, s.miner, s.chainDb, s.gpo, s.eventMux, s.accountManager),
 			Public:    true,
 		}, {
 			Namespace: "eth",
@@ -290,7 +313,7 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   downloader.NewPublicDownloaderAPI(s.Downloader()),
+			Service:   downloader.NewPublicDownloaderAPI(s.protocolManager.downloader, s.eventMux),
 			Public:    true,
 		}, {
 			Namespace: "miner",
@@ -305,7 +328,7 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   filters.NewPublicFilterAPI(s.ChainDb(), s.EventMux()),
+			Service:   filters.NewPublicFilterAPI(s.chainDb, s.eventMux),
 			Public:    true,
 		}, {
 			Namespace: "admin",
@@ -319,7 +342,7 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "debug",
 			Version:   "1.0",
-			Service:   NewPrivateDebugAPI(s),
+			Service:   NewPrivateDebugAPI(s.chainConfig, s),
 		}, {
 			Namespace: "net",
 			Version:   "1.0",
@@ -328,7 +351,7 @@ func (s *Ethereum) APIs() []rpc.API {
 		}, {
 			Namespace: "admin",
 			Version:   "1.0",
-			Service:   ethreg.NewPrivateRegistarAPI(s.BlockChain(), s.ChainDb(), s.TxPool(), s.AccountManager()),
+			Service:   ethreg.NewPrivateRegistarAPI(s.chainConfig, s.blockchain, s.chainDb, s.txPool, s.accountManager),
 		},
 	}
 }
@@ -340,13 +363,13 @@ func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) {
 func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	eb = s.etherbase
 	if (eb == common.Address{}) {
-		addr, e := s.AccountManager().AddressByIndex(0)
-		if e != nil {
-			err = fmt.Errorf("etherbase address must be explicitly specified")
+		firstAccount, err := s.AccountManager().AccountByIndex(0)
+		eb = firstAccount.Address
+		if err != nil {
+			return eb, fmt.Errorf("etherbase address must be explicitly specified")
 		}
-		eb = common.HexToAddress(addr)
 	}
-	return
+	return eb, nil
 }
 
 // set in js console via admin interface or wrapper from cli flags
@@ -534,7 +557,7 @@ func upgradeChainDatabase(db ethdb.Database) error {
 			if err := core.WriteTd(db, block.Hash(), block.DeprecatedTd()); err != nil {
 				return err
 			}
-			if err := core.WriteBody(db, block.Hash(), &types.Body{block.Transactions(), block.Uncles()}); err != nil {
+			if err := core.WriteBody(db, block.Hash(), block.Body()); err != nil {
 				return err
 			}
 			if err := core.WriteHeader(db, block.Header()); err != nil {
@@ -550,7 +573,7 @@ func upgradeChainDatabase(db ethdb.Database) error {
 		if err := core.WriteTd(db, current.Hash(), current.DeprecatedTd()); err != nil {
 			return err
 		}
-		if err := core.WriteBody(db, current.Hash(), &types.Body{current.Transactions(), current.Uncles()}); err != nil {
+		if err := core.WriteBody(db, current.Hash(), current.Body()); err != nil {
 			return err
 		}
 		if err := core.WriteHeader(db, current.Header()); err != nil {

@@ -142,7 +142,6 @@ var Service = React.createClass({
 					{
 						this.props.service.creating || this.props.service.deleting || this.props.service.changing ? null :
 						<div className="clearfix">
-							<hr style={{margin: "10px 0"}}/>
 							<div className="pull-right">
 								{this.props.service.enabled ?
 									<a href="#" className="btn btn-sm btn-warning" onClick={this.confirmLock}><i className="fa fa-lock"></i> Disable</a> :

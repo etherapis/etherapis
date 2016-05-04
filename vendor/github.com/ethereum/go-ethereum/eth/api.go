@@ -1,23 +1,24 @@
 // Copyright 2015 The go-ethereum Authors
-// This file is part of go-ethereum.
+// This file is part of the go-ethereum library.
 //
-// go-ethereum is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// go-ethereum is distributed in the hope that it will be useful,
+// The go-ethereum library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License
-// along with go-ethereum. If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package eth
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,8 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,8 +48,18 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"gopkg.in/fatih/set.v0"
+	"github.com/syndtr/goleveldb/leveldb"
+	"golang.org/x/net/context"
 )
+
+// errNoCode is returned by call and transact operations for which the requested
+// recipient contract to operate on does not exist in the state db or does not
+// have any code associated with it (i.e. suicided).
+//
+// Please note, this error string is part of the RPC API and is expected by the
+// native contract bindings to signal this particular error. Do not change this
+// as it will break all dependent code!
+var errNoCode = errors.New("no contract code at given address")
 
 const defaultGas = uint64(90000)
 
@@ -95,7 +108,10 @@ type PublicEthereumAPI struct {
 
 // NewPublicEthereumAPI creates a new Ethereum protocol API.
 func NewPublicEthereumAPI(e *Ethereum) *PublicEthereumAPI {
-	return &PublicEthereumAPI{e, NewGasPriceOracle(e)}
+	return &PublicEthereumAPI{
+		e:   e,
+		gpo: e.gpo,
+	}
 }
 
 // GasPrice returns a suggestion for a gas price.
@@ -106,11 +122,7 @@ func (s *PublicEthereumAPI) GasPrice() *big.Int {
 // GetCompilers returns the collection of available smart contract compilers
 func (s *PublicEthereumAPI) GetCompilers() ([]string, error) {
 	solc, err := s.e.Solc()
-	if err != nil {
-		return nil, err
-	}
-
-	if solc != nil {
+	if err != nil && solc != nil {
 		return []string{"Solidity"}, nil
 	}
 
@@ -238,9 +250,15 @@ func NewPrivateMinerAPI(e *Ethereum) *PrivateMinerAPI {
 	return &PrivateMinerAPI{e: e}
 }
 
-// Start the miner with the given number of threads
-func (s *PrivateMinerAPI) Start(threads rpc.HexNumber) (bool, error) {
+// Start the miner with the given number of threads. If threads is nil the number of
+// workers started is equal to the number of logical CPU's that are usable by this process.
+func (s *PrivateMinerAPI) Start(threads *rpc.HexNumber) (bool, error) {
 	s.e.StartAutoDAG()
+
+	if threads == nil {
+		threads = rpc.NewHexNumber(runtime.NumCPU())
+	}
+
 	err := s.e.StartMining(threads.Int(), "")
 	if err == nil {
 		return true, nil
@@ -263,7 +281,7 @@ func (s *PrivateMinerAPI) SetExtra(extra string) (bool, error) {
 }
 
 // SetGasPrice sets the minimum accepted gas price for the miner.
-func (s *PrivateMinerAPI) SetGasPrice(gasPrice rpc.Number) bool {
+func (s *PrivateMinerAPI) SetGasPrice(gasPrice rpc.HexNumber) bool {
 	s.e.Miner().SetGasPrice(gasPrice.BigInt())
 	return true
 }
@@ -400,7 +418,7 @@ func NewPublicAccountAPI(am *accounts.Manager) *PublicAccountAPI {
 }
 
 // Accounts returns the collection of accounts this node manages
-func (s *PublicAccountAPI) Accounts() ([]accounts.Account, error) {
+func (s *PublicAccountAPI) Accounts() []accounts.Account {
 	return s.am.Accounts()
 }
 
@@ -416,17 +434,13 @@ func NewPrivateAccountAPI(am *accounts.Manager) *PrivateAccountAPI {
 }
 
 // ListAccounts will return a list of addresses for accounts this node manages.
-func (s *PrivateAccountAPI) ListAccounts() ([]common.Address, error) {
-	accounts, err := s.am.Accounts()
-	if err != nil {
-		return nil, err
-	}
-
+func (s *PrivateAccountAPI) ListAccounts() []common.Address {
+	accounts := s.am.Accounts()
 	addresses := make([]common.Address, len(accounts))
 	for i, acc := range accounts {
 		addresses[i] = acc.Address
 	}
-	return addresses, nil
+	return addresses
 }
 
 // NewAccount will create a new account and returns the address for the new account.
@@ -438,14 +452,29 @@ func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) 
 	return common.Address{}, err
 }
 
-// UnlockAccount will unlock the account associated with the given address with the given password for duration seconds.
-// It returns an indication if the action was successful.
-func (s *PrivateAccountAPI) UnlockAccount(addr common.Address, password string, duration int) bool {
-	if err := s.am.TimedUnlock(addr, password, time.Duration(duration)*time.Second); err != nil {
-		glog.V(logger.Info).Infof("%v\n", err)
-		return false
+func (s *PrivateAccountAPI) ImportRawKey(privkey string, password string) (common.Address, error) {
+	hexkey, err := hex.DecodeString(privkey)
+	if err != nil {
+		return common.Address{}, err
 	}
-	return true
+
+	acc, err := s.am.ImportECDSA(crypto.ToECDSA(hexkey), password)
+	return acc.Address, err
+}
+
+// UnlockAccount will unlock the account associated with the given address with
+// the given password for duration seconds. If duration is nil it will use a
+// default of 300 seconds. It returns an indication if the account was unlocked.
+func (s *PrivateAccountAPI) UnlockAccount(addr common.Address, password string, duration *rpc.HexNumber) (bool, error) {
+	if duration == nil {
+		duration = rpc.NewHexNumber(300)
+	}
+	a := accounts.Account{Address: addr}
+	d := time.Duration(duration.Int64()) * time.Second
+	if err := s.am.TimedUnlock(a, password, d); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // LockAccount will lock the account associated with the given address when it's unlocked.
@@ -456,16 +485,49 @@ func (s *PrivateAccountAPI) LockAccount(addr common.Address) bool {
 // PublicBlockChainAPI provides an API to access the Ethereum blockchain.
 // It offers only methods that operate on public data that is freely available to anyone.
 type PublicBlockChainAPI struct {
-	bc       *core.BlockChain
-	chainDb  ethdb.Database
-	eventMux *event.TypeMux
-	am       *accounts.Manager
-	miner    *miner.Miner
+	config                  *core.ChainConfig
+	bc                      *core.BlockChain
+	chainDb                 ethdb.Database
+	eventMux                *event.TypeMux
+	muNewBlockSubscriptions sync.Mutex                             // protects newBlocksSubscriptions
+	newBlockSubscriptions   map[string]func(core.ChainEvent) error // callbacks for new block subscriptions
+	am                      *accounts.Manager
+	miner                   *miner.Miner
+	gpo                     *GasPriceOracle
 }
 
 // NewPublicBlockChainAPI creates a new Etheruem blockchain API.
-func NewPublicBlockChainAPI(bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, eventMux *event.TypeMux, am *accounts.Manager) *PublicBlockChainAPI {
-	return &PublicBlockChainAPI{bc: bc, miner: m, chainDb: chainDb, eventMux: eventMux, am: am}
+func NewPublicBlockChainAPI(config *core.ChainConfig, bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, gpo *GasPriceOracle, eventMux *event.TypeMux, am *accounts.Manager) *PublicBlockChainAPI {
+	api := &PublicBlockChainAPI{
+		config:   config,
+		bc:       bc,
+		miner:    m,
+		chainDb:  chainDb,
+		eventMux: eventMux,
+		am:       am,
+		newBlockSubscriptions: make(map[string]func(core.ChainEvent) error),
+		gpo: gpo,
+	}
+
+	go api.subscriptionLoop()
+
+	return api
+}
+
+// subscriptionLoop reads events from the global event mux and creates notifications for the matched subscriptions.
+func (s *PublicBlockChainAPI) subscriptionLoop() {
+	sub := s.eventMux.Subscribe(core.ChainEvent{})
+	for event := range sub.Chan() {
+		if chainEvent, ok := event.Data.(core.ChainEvent); ok {
+			s.muNewBlockSubscriptions.Lock()
+			for id, notifyOf := range s.newBlockSubscriptions {
+				if notifyOf(chainEvent) == rpc.ErrNotificationNotFound {
+					delete(s.newBlockSubscriptions, id)
+				}
+			}
+			s.muNewBlockSubscriptions.Unlock()
+		}
+	}
 }
 
 // BlockNumber returns the block number of the chain head.
@@ -563,20 +625,36 @@ type NewBlocksArgs struct {
 
 // NewBlocks triggers a new block event each time a block is appended to the chain. It accepts an argument which allows
 // the caller to specify whether the output should contain transactions and in what format.
-func (s *PublicBlockChainAPI) NewBlocks(args NewBlocksArgs) (rpc.Subscription, error) {
-	sub := s.eventMux.Subscribe(core.ChainEvent{})
-
-	output := func(rawBlock interface{}) interface{} {
-		if event, ok := rawBlock.(core.ChainEvent); ok {
-			notification, err := s.rpcOutputBlock(event.Block, args.IncludeTransactions, args.TransactionDetails)
-			if err == nil {
-				return notification
-			}
-		}
-		return rawBlock
+func (s *PublicBlockChainAPI) NewBlocks(ctx context.Context, args NewBlocksArgs) (rpc.Subscription, error) {
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return nil, rpc.ErrNotificationsUnsupported
 	}
 
-	return rpc.NewSubscriptionWithOutputFormat(sub, output), nil
+	// create a subscription that will remove itself when unsubscribed/cancelled
+	subscription, err := notifier.NewSubscription(func(subId string) {
+		s.muNewBlockSubscriptions.Lock()
+		delete(s.newBlockSubscriptions, subId)
+		s.muNewBlockSubscriptions.Unlock()
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// add a callback that is called on chain events which will format the block and notify the client
+	s.muNewBlockSubscriptions.Lock()
+	s.newBlockSubscriptions[subscription.ID()] = func(e core.ChainEvent) error {
+		if notification, err := s.rpcOutputBlock(e.Block, args.IncludeTransactions, args.TransactionDetails); err == nil {
+			return subscription.Notify(notification)
+		} else {
+			glog.V(logger.Warn).Info("unable to format block %v\n", err)
+		}
+		return nil
+	}
+	s.muNewBlockSubscriptions.Unlock()
+
+	return subscription, nil
 }
 
 // GetCode returns the code stored at the given address in the state for the given block number.
@@ -625,8 +703,8 @@ func (m callmsg) Data() []byte                          { return m.data }
 type CallArgs struct {
 	From     common.Address  `json:"from"`
 	To       *common.Address `json:"to"`
-	Gas      rpc.HexNumber   `json:"gas"`
-	GasPrice rpc.HexNumber   `json:"gasPrice"`
+	Gas      *rpc.HexNumber  `json:"gas"`
+	GasPrice *rpc.HexNumber  `json:"gasPrice"`
 	Value    rpc.HexNumber   `json:"value"`
 	Data     string          `json:"data"`
 }
@@ -639,11 +717,17 @@ func (s *PublicBlockChainAPI) doCall(args CallArgs, blockNr rpc.BlockNumber) (st
 	}
 	stateDb = stateDb.Copy()
 
+	// If there's no code to interact with, respond with an appropriate error
+	if args.To != nil {
+		if code := stateDb.GetCode(*args.To); len(code) == 0 {
+			return "0x", nil, errNoCode
+		}
+	}
 	// Retrieve the account state object to interact with
 	var from *state.StateObject
 	if args.From == (common.Address{}) {
-		accounts, err := s.am.Accounts()
-		if err != nil || len(accounts) == 0 {
+		accounts := s.am.Accounts()
+		if len(accounts) == 0 {
 			from = stateDb.GetOrNewStateObject(common.Address{})
 		} else {
 			from = stateDb.GetOrNewStateObject(accounts[0].Address)
@@ -662,22 +746,22 @@ func (s *PublicBlockChainAPI) doCall(args CallArgs, blockNr rpc.BlockNumber) (st
 		value:    args.Value.BigInt(),
 		data:     common.FromHex(args.Data),
 	}
-	if msg.gas.Cmp(common.Big0) == 0 {
+	if msg.gas == nil {
 		msg.gas = big.NewInt(50000000)
 	}
-	if msg.gasPrice.Cmp(common.Big0) == 0 {
-		msg.gasPrice = new(big.Int).Mul(big.NewInt(50), common.Shannon)
+	if msg.gasPrice == nil {
+		msg.gasPrice = s.gpo.SuggestPrice()
 	}
 
 	// Execute the call and return
-	vmenv := core.NewEnv(stateDb, s.bc, msg, block.Header(), nil)
+	vmenv := core.NewEnv(stateDb, s.config, s.bc, msg, block.Header(), s.config.VmConfig)
 	gp := new(core.GasPool).AddGas(common.MaxBig)
 
-	res, gas, err := core.ApplyMessage(vmenv, msg, gp)
+	res, requiredGas, _, err := core.NewStateTransition(vmenv, msg, gp).TransitionDb()
 	if len(res) == 0 { // backwards compatibility
-		return "0x", gas, err
+		return "0x", requiredGas, err
 	}
-	return common.ToHex(res), gas, err
+	return common.ToHex(res), requiredGas, err
 }
 
 // Call executes the given transaction on the state for the given block number.
@@ -820,26 +904,51 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 
 // PublicTransactionPoolAPI exposes methods for the RPC interface
 type PublicTransactionPoolAPI struct {
-	eventMux *event.TypeMux
-	chainDb  ethdb.Database
-	gpo      *GasPriceOracle
-	bc       *core.BlockChain
-	miner    *miner.Miner
-	am       *accounts.Manager
-	txPool   *core.TxPool
-	txMu     sync.Mutex
+	eventMux        *event.TypeMux
+	chainDb         ethdb.Database
+	gpo             *GasPriceOracle
+	bc              *core.BlockChain
+	miner           *miner.Miner
+	am              *accounts.Manager
+	txPool          *core.TxPool
+	txMu            sync.Mutex
+	muPendingTxSubs sync.Mutex
+	pendingTxSubs   map[string]rpc.Subscription
 }
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(e *Ethereum) *PublicTransactionPoolAPI {
-	return &PublicTransactionPoolAPI{
-		eventMux: e.EventMux(),
-		gpo:      NewGasPriceOracle(e),
-		chainDb:  e.ChainDb(),
-		bc:       e.BlockChain(),
-		am:       e.AccountManager(),
-		txPool:   e.TxPool(),
-		miner:    e.Miner(),
+	api := &PublicTransactionPoolAPI{
+		eventMux:      e.eventMux,
+		gpo:           e.gpo,
+		chainDb:       e.chainDb,
+		bc:            e.blockchain,
+		am:            e.accountManager,
+		txPool:        e.txPool,
+		miner:         e.miner,
+		pendingTxSubs: make(map[string]rpc.Subscription),
+	}
+	go api.subscriptionLoop()
+
+	return api
+}
+
+// subscriptionLoop listens for events on the global event mux and creates notifications for subscriptions.
+func (s *PublicTransactionPoolAPI) subscriptionLoop() {
+	sub := s.eventMux.Subscribe(core.TxPreEvent{})
+	for event := range sub.Chan() {
+		tx := event.Data.(core.TxPreEvent)
+		if from, err := tx.Tx.FromFrontier(); err == nil {
+			if s.am.HasAddress(from) {
+				s.muPendingTxSubs.Lock()
+				for id, sub := range s.pendingTxSubs {
+					if sub.Notify(tx.Tx.Hash()) == rpc.ErrNotificationNotFound {
+						delete(s.pendingTxSubs, id)
+					}
+				}
+				s.muPendingTxSubs.Unlock()
+			}
+		}
 	}
 }
 
@@ -1007,9 +1116,8 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (ma
 }
 
 // sign is a helper function that signs a transaction with the private key of the given address.
-func (s *PublicTransactionPoolAPI) sign(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-	acc := accounts.Account{address}
-	signature, err := s.am.Sign(acc, tx.SigHash().Bytes())
+func (s *PublicTransactionPoolAPI) sign(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+	signature, err := s.am.Sign(addr, tx.SigHash().Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -1102,10 +1210,10 @@ func (s *PublicTransactionPoolAPI) SendRawTransaction(encodedTx string) (string,
 	return tx.Hash().Hex(), nil
 }
 
-// Sign will sign the given data string with the given address. The account corresponding with the address needs to
-// be unlocked.
-func (s *PublicTransactionPoolAPI) Sign(address common.Address, data string) (string, error) {
-	signature, error := s.am.Sign(accounts.Account{Address: address}, common.HexToHash(data).Bytes())
+// Sign signs the given hash using the key that matches the address. The key must be
+// unlocked in order to sign the hash.
+func (s *PublicTransactionPoolAPI) Sign(addr common.Address, hash common.Hash) (string, error) {
+	signature, error := s.am.Sign(addr, hash[:])
 	return common.ToHex(signature), error
 }
 
@@ -1208,7 +1316,7 @@ func newTx(t *types.Transaction) *Tx {
 // SignTransaction will sign the given transaction with the from account.
 // The node needs to have the private key of the account corresponding with
 // the given from address and it needs to be unlocked.
-func (s *PublicTransactionPoolAPI) SignTransaction(args *SignTransactionArgs) (*SignTransactionResult, error) {
+func (s *PublicTransactionPoolAPI) SignTransaction(args SignTransactionArgs) (*SignTransactionResult, error) {
 	if args.Gas == nil {
 		args.Gas = rpc.NewHexNumber(defaultGas)
 	}
@@ -1250,69 +1358,46 @@ func (s *PublicTransactionPoolAPI) SignTransaction(args *SignTransactionArgs) (*
 
 // PendingTransactions returns the transactions that are in the transaction pool and have a from address that is one of
 // the accounts this node manages.
-func (s *PublicTransactionPoolAPI) PendingTransactions() ([]*RPCTransaction, error) {
-	accounts, err := s.am.Accounts()
-	if err != nil {
-		return nil, err
-	}
-
-	accountSet := set.New()
-	for _, account := range accounts {
-		accountSet.Add(account.Address)
-	}
-
+func (s *PublicTransactionPoolAPI) PendingTransactions() []*RPCTransaction {
 	pending := s.txPool.GetTransactions()
 	transactions := make([]*RPCTransaction, 0)
 	for _, tx := range pending {
-		if from, _ := tx.FromFrontier(); accountSet.Has(from) {
+		from, _ := tx.FromFrontier()
+		if s.am.HasAddress(from) {
 			transactions = append(transactions, newRPCPendingTransaction(tx))
 		}
 	}
-
-	return transactions, nil
+	return transactions
 }
 
 // NewPendingTransaction creates a subscription that is triggered each time a transaction enters the transaction pool
 // and is send from one of the transactions this nodes manages.
-func (s *PublicTransactionPoolAPI) NewPendingTransactions() (rpc.Subscription, error) {
-	sub := s.eventMux.Subscribe(core.TxPreEvent{})
+func (s *PublicTransactionPoolAPI) NewPendingTransactions(ctx context.Context) (rpc.Subscription, error) {
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return nil, rpc.ErrNotificationsUnsupported
+	}
 
-	accounts, err := s.am.Accounts()
+	subscription, err := notifier.NewSubscription(func(id string) {
+		s.muPendingTxSubs.Lock()
+		delete(s.pendingTxSubs, id)
+		s.muPendingTxSubs.Unlock()
+	})
+
 	if err != nil {
-		return rpc.Subscription{}, err
-	}
-	accountSet := set.New()
-	for _, account := range accounts {
-		accountSet.Add(account.Address)
-	}
-	accountSetLastUpdates := time.Now()
-
-	output := func(transaction interface{}) interface{} {
-		if time.Since(accountSetLastUpdates) > (time.Duration(2) * time.Second) {
-			if accounts, err = s.am.Accounts(); err != nil {
-				accountSet.Clear()
-				for _, account := range accounts {
-					accountSet.Add(account.Address)
-				}
-				accountSetLastUpdates = time.Now()
-			}
-		}
-
-		tx := transaction.(core.TxPreEvent)
-		if from, err := tx.Tx.FromFrontier(); err == nil {
-			if accountSet.Has(from) {
-				return tx.Tx.Hash()
-			}
-		}
-		return nil
+		return nil, err
 	}
 
-	return rpc.NewSubscriptionWithOutputFormat(sub, output), nil
+	s.muPendingTxSubs.Lock()
+	s.pendingTxSubs[subscription.ID()] = subscription
+	s.muPendingTxSubs.Unlock()
+
+	return subscription, nil
 }
 
 // Resend accepts an existing transaction and a new gas price and limit. It will remove the given transaction from the
 // pool and reinsert it with the new gas price and limit.
-func (s *PublicTransactionPoolAPI) Resend(tx *Tx, gasPrice, gasLimit *rpc.HexNumber) (common.Hash, error) {
+func (s *PublicTransactionPoolAPI) Resend(tx Tx, gasPrice, gasLimit *rpc.HexNumber) (common.Hash, error) {
 
 	pending := s.txPool.GetTransactions()
 	for _, p := range pending {
@@ -1501,79 +1586,96 @@ func (api *PublicDebugAPI) SeedHash(number uint64) (string, error) {
 // PrivateDebugAPI is the collection of Etheruem APIs exposed over the private
 // debugging endpoint.
 type PrivateDebugAPI struct {
-	eth *Ethereum
+	config *core.ChainConfig
+	eth    *Ethereum
 }
 
 // NewPrivateDebugAPI creates a new API definition for the private debug methods
 // of the Ethereum service.
-func NewPrivateDebugAPI(eth *Ethereum) *PrivateDebugAPI {
-	return &PrivateDebugAPI{eth: eth}
+func NewPrivateDebugAPI(config *core.ChainConfig, eth *Ethereum) *PrivateDebugAPI {
+	return &PrivateDebugAPI{config: config, eth: eth}
+}
+
+// ChaindbProperty returns leveldb properties of the chain database.
+func (api *PrivateDebugAPI) ChaindbProperty(property string) (string, error) {
+	ldb, ok := api.eth.chainDb.(interface {
+		LDB() *leveldb.DB
+	})
+	if !ok {
+		return "", fmt.Errorf("chaindbProperty does not work for memory databases")
+	}
+	if property == "" {
+		property = "leveldb.stats"
+	} else if !strings.HasPrefix(property, "leveldb.") {
+		property = "leveldb." + property
+	}
+	return ldb.LDB().GetProperty(property)
 }
 
 // BlockTraceResults is the returned value when replaying a block to check for
 // consensus results and full VM trace logs for all included transactions.
 type BlockTraceResult struct {
-	Validated  bool           `json: "validated"`
+	Validated  bool           `json:"validated"`
 	StructLogs []structLogRes `json:"structLogs"`
-	Error      error          `json:"error"`
+	Error      string         `json:"error"`
 }
 
 // TraceBlock processes the given block's RLP but does not import the block in to
 // the chain.
-func (api *PrivateDebugAPI) TraceBlock(blockRlp []byte, config vm.Config) BlockTraceResult {
+func (api *PrivateDebugAPI) TraceBlock(blockRlp []byte, config *vm.Config) BlockTraceResult {
 	var block types.Block
 	err := rlp.Decode(bytes.NewReader(blockRlp), &block)
 	if err != nil {
-		return BlockTraceResult{Error: fmt.Errorf("could not decode block: %v", err)}
+		return BlockTraceResult{Error: fmt.Sprintf("could not decode block: %v", err)}
 	}
 
 	validated, logs, err := api.traceBlock(&block, config)
 	return BlockTraceResult{
 		Validated:  validated,
 		StructLogs: formatLogs(logs),
-		Error:      err,
+		Error:      formatError(err),
 	}
 }
 
 // TraceBlockFromFile loads the block's RLP from the given file name and attempts to
 // process it but does not import the block in to the chain.
-func (api *PrivateDebugAPI) TraceBlockFromFile(file string, config vm.Config) BlockTraceResult {
+func (api *PrivateDebugAPI) TraceBlockFromFile(file string, config *vm.Config) BlockTraceResult {
 	blockRlp, err := ioutil.ReadFile(file)
 	if err != nil {
-		return BlockTraceResult{Error: fmt.Errorf("could not read file: %v", err)}
+		return BlockTraceResult{Error: fmt.Sprintf("could not read file: %v", err)}
 	}
 	return api.TraceBlock(blockRlp, config)
 }
 
 // TraceProcessBlock processes the block by canonical block number.
-func (api *PrivateDebugAPI) TraceBlockByNumber(number uint64, config vm.Config) BlockTraceResult {
+func (api *PrivateDebugAPI) TraceBlockByNumber(number uint64, config *vm.Config) BlockTraceResult {
 	// Fetch the block that we aim to reprocess
 	block := api.eth.BlockChain().GetBlockByNumber(number)
 	if block == nil {
-		return BlockTraceResult{Error: fmt.Errorf("block #%d not found", number)}
+		return BlockTraceResult{Error: fmt.Sprintf("block #%d not found", number)}
 	}
 
 	validated, logs, err := api.traceBlock(block, config)
 	return BlockTraceResult{
 		Validated:  validated,
 		StructLogs: formatLogs(logs),
-		Error:      err,
+		Error:      formatError(err),
 	}
 }
 
 // TraceBlockByHash processes the block by hash.
-func (api *PrivateDebugAPI) TraceBlockByHash(hash common.Hash, config vm.Config) BlockTraceResult {
+func (api *PrivateDebugAPI) TraceBlockByHash(hash common.Hash, config *vm.Config) BlockTraceResult {
 	// Fetch the block that we aim to reprocess
 	block := api.eth.BlockChain().GetBlock(hash)
 	if block == nil {
-		return BlockTraceResult{Error: fmt.Errorf("block #%x not found", hash)}
+		return BlockTraceResult{Error: fmt.Sprintf("block #%x not found", hash)}
 	}
 
 	validated, logs, err := api.traceBlock(block, config)
 	return BlockTraceResult{
 		Validated:  validated,
 		StructLogs: formatLogs(logs),
-		Error:      err,
+		Error:      formatError(err),
 	}
 }
 
@@ -1590,7 +1692,7 @@ func (t *TraceCollector) AddStructLog(slog vm.StructLog) {
 }
 
 // traceBlock processes the given block but does not save the state.
-func (api *PrivateDebugAPI) traceBlock(block *types.Block, config vm.Config) (bool, []vm.StructLog, error) {
+func (api *PrivateDebugAPI) traceBlock(block *types.Block, config *vm.Config) (bool, []vm.StructLog, error) {
 	// Validate and reprocess the block
 	var (
 		blockchain = api.eth.BlockChain()
@@ -1598,10 +1700,13 @@ func (api *PrivateDebugAPI) traceBlock(block *types.Block, config vm.Config) (bo
 		processor  = blockchain.Processor()
 		collector  = &TraceCollector{}
 	)
+	if config == nil {
+		config = new(vm.Config)
+	}
 	config.Debug = true // make sure debug is set.
 	config.Logger.Collector = collector
 
-	if err := core.ValidateHeader(blockchain.AuxValidator(), block.Header(), blockchain.GetHeader(block.ParentHash()), true, false); err != nil {
+	if err := core.ValidateHeader(api.config, blockchain.AuxValidator(), block.Header(), blockchain.GetHeader(block.ParentHash()), true, false); err != nil {
 		return false, collector.traces, err
 	}
 	statedb, err := state.New(blockchain.GetBlock(block.ParentHash()).Root(), api.eth.ChainDb())
@@ -1609,7 +1714,7 @@ func (api *PrivateDebugAPI) traceBlock(block *types.Block, config vm.Config) (bo
 		return false, collector.traces, err
 	}
 
-	receipts, _, usedGas, err := processor.Process(block, statedb, &config)
+	receipts, _, usedGas, err := processor.Process(block, statedb, *config)
 	if err != nil {
 		return false, collector.traces, err
 	}
@@ -1641,7 +1746,7 @@ type structLogRes struct {
 	Gas     *big.Int          `json:"gas"`
 	GasCost *big.Int          `json:"gasCost"`
 	Depth   int               `json:"depth"`
-	Error   error             `json:"error"`
+	Error   string            `json:"error"`
 	Stack   []string          `json:"stack"`
 	Memory  []string          `json:"memory"`
 	Storage map[string]string `json:"storage"`
@@ -1666,7 +1771,7 @@ func formatLogs(structLogs []vm.StructLog) []structLogRes {
 			Gas:     trace.Gas,
 			GasCost: trace.GasCost,
 			Depth:   trace.Depth,
-			Error:   trace.Err,
+			Error:   formatError(trace.Err),
 			Stack:   make([]string, len(trace.Stack)),
 			Storage: make(map[string]string),
 		}
@@ -1686,58 +1791,76 @@ func formatLogs(structLogs []vm.StructLog) []structLogRes {
 	return formattedStructLogs
 }
 
+// formatError formats a Go error into either an empty string or the data content
+// of the error itself.
+func formatError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 // TraceTransaction returns the structured logs created during the execution of EVM
 // and returns them as a JSON object.
-func (s *PrivateDebugAPI) TraceTransaction(txHash common.Hash, logger vm.LogConfig) (*ExecutionResult, error) {
-	// Retrieve the tx from the chain
-	tx, _, blockIndex, _ := core.GetTransaction(s.eth.ChainDb(), txHash)
-
+func (s *PrivateDebugAPI) TraceTransaction(txHash common.Hash, logger *vm.LogConfig) (*ExecutionResult, error) {
+	if logger == nil {
+		logger = new(vm.LogConfig)
+	}
+	// Retrieve the tx from the chain and the containing block
+	tx, blockHash, _, txIndex := core.GetTransaction(s.eth.ChainDb(), txHash)
 	if tx == nil {
-		return nil, fmt.Errorf("Transaction not found")
+		return nil, fmt.Errorf("transaction %x not found", txHash)
 	}
-
-	block := s.eth.BlockChain().GetBlockByNumber(blockIndex - 1)
+	block := s.eth.BlockChain().GetBlock(blockHash)
 	if block == nil {
-		return nil, fmt.Errorf("Unable to retrieve prior block")
+		return nil, fmt.Errorf("block %x not found", blockHash)
 	}
-
-	// Create the state database
-	stateDb, err := state.New(block.Root(), s.eth.ChainDb())
+	// Create the state database to mutate and eventually trace
+	parent := s.eth.BlockChain().GetBlock(block.ParentHash())
+	if parent == nil {
+		return nil, fmt.Errorf("block parent %x not found", block.ParentHash())
+	}
+	stateDb, err := state.New(parent.Root(), s.eth.ChainDb())
 	if err != nil {
 		return nil, err
 	}
-
-	txFrom, err := tx.FromFrontier()
-
-	if err != nil {
-		return nil, fmt.Errorf("Unable to create transaction sender")
+	// Mutate the state and trace the selected transaction
+	for idx, tx := range block.Transactions() {
+		// Assemble the transaction call message
+		from, err := tx.FromFrontier()
+		if err != nil {
+			return nil, fmt.Errorf("sender retrieval failed: %v", err)
+		}
+		msg := callmsg{
+			from:     stateDb.GetOrNewStateObject(from),
+			to:       tx.To(),
+			gas:      tx.Gas(),
+			gasPrice: tx.GasPrice(),
+			value:    tx.Value(),
+			data:     tx.Data(),
+		}
+		// Mutate the state if we haven't reached the tracing transaction yet
+		if uint64(idx) < txIndex {
+			vmenv := core.NewEnv(stateDb, s.config, s.eth.BlockChain(), msg, parent.Header(), vm.Config{})
+			_, _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(tx.Gas()))
+			if err != nil {
+				return nil, fmt.Errorf("mutation failed: %v", err)
+			}
+			continue
+		}
+		// Otherwise trace the transaction and return
+		vmenv := core.NewEnv(stateDb, s.config, s.eth.BlockChain(), msg, parent.Header(), vm.Config{Debug: true, Logger: *logger})
+		ret, gas, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(tx.Gas()))
+		if err != nil {
+			return nil, fmt.Errorf("tracing failed: %v", err)
+		}
+		return &ExecutionResult{
+			Gas:         gas,
+			ReturnValue: fmt.Sprintf("%x", ret),
+			StructLogs:  formatLogs(vmenv.StructLogs()),
+		}, nil
 	}
-	from := stateDb.GetOrNewStateObject(txFrom)
-	msg := callmsg{
-		from:     from,
-		to:       tx.To(),
-		gas:      tx.Gas(),
-		gasPrice: tx.GasPrice(),
-		value:    tx.Value(),
-		data:     tx.Data(),
-	}
-
-	vmenv := core.NewEnv(stateDb, s.eth.BlockChain(), msg, block.Header(), &vm.Config{
-		Debug:  true,
-		Logger: logger,
-	})
-	gp := new(core.GasPool).AddGas(block.GasLimit())
-
-	ret, gas, err := core.ApplyMessage(vmenv, msg, gp)
-	if err != nil {
-		return nil, fmt.Errorf("Error executing transaction %v", err)
-	}
-
-	return &ExecutionResult{
-		Gas:         gas,
-		ReturnValue: fmt.Sprintf("%x", ret),
-		StructLogs:  formatLogs(vmenv.StructLogs()),
-	}, nil
+	return nil, errors.New("database inconsistency")
 }
 
 func (s *PublicBlockChainAPI) TraceCall(args CallArgs, blockNr rpc.BlockNumber) (*ExecutionResult, error) {
@@ -1751,8 +1874,8 @@ func (s *PublicBlockChainAPI) TraceCall(args CallArgs, blockNr rpc.BlockNumber) 
 	// Retrieve the account state object to interact with
 	var from *state.StateObject
 	if args.From == (common.Address{}) {
-		accounts, err := s.am.Accounts()
-		if err != nil || len(accounts) == 0 {
+		accounts := s.am.Accounts()
+		if len(accounts) == 0 {
 			from = stateDb.GetOrNewStateObject(common.Address{})
 		} else {
 			from = stateDb.GetOrNewStateObject(accounts[0].Address)
@@ -1779,7 +1902,9 @@ func (s *PublicBlockChainAPI) TraceCall(args CallArgs, blockNr rpc.BlockNumber) 
 	}
 
 	// Execute the call and return
-	vmenv := core.NewEnv(stateDb, s.bc, msg, block.Header(), nil)
+	vmenv := core.NewEnv(stateDb, s.config, s.bc, msg, block.Header(), vm.Config{
+		Debug: true,
+	})
 	gp := new(core.GasPool).AddGas(common.MaxBig)
 
 	ret, gas, err := core.ApplyMessage(vmenv, msg, gp)

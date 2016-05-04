@@ -217,9 +217,8 @@ func (m headerRegexMatcher) Match(r *http.Request, match *RouteMatch) bool {
 	return matchMapWithRegex(m, r.Header, true)
 }
 
-// HeadersRegexp accepts a sequence of key/value pairs, where the value has regex
-// support. For example:
-//
+// Regular expressions can be used with headers as well.
+// It accepts a sequence of key/value pairs, where the value has regex support. For example
 //     r := mux.NewRouter()
 //     r.HeadersRegexp("Content-Type", "application/(text|json)",
 //               "X-Requested-With", "XMLHttpRequest")
@@ -264,7 +263,6 @@ func (r *Route) Host(tpl string) *Route {
 // MatcherFunc is the function signature used by custom matchers.
 type MatcherFunc func(*http.Request, *RouteMatch) bool
 
-// Match returns the match for a given request.
 func (m MatcherFunc) Match(r *http.Request, match *RouteMatch) bool {
 	return m(r, match)
 }

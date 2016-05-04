@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/event"
 	"gopkg.in/fatih/set.v0"
 )
 
@@ -57,7 +56,7 @@ type service struct {
 
 // serverRequest is an incoming request
 type serverRequest struct {
-	id            int64
+	id            interface{}
 	svcname       string
 	rcvr          reflect.Value
 	callb         *callback
@@ -66,10 +65,10 @@ type serverRequest struct {
 	err           RPCError
 }
 
-type serviceRegistry map[string]*service          // collection of services
-type callbacks map[string]*callback               // collection of RPC callbacks
-type subscriptions map[string]*callback           // collection of subscription callbacks
-type subscriptionRegistry map[string]Subscription // collection of subscriptions
+type serviceRegistry map[string]*service       // collection of services
+type callbacks map[string]*callback            // collection of RPC callbacks
+type subscriptions map[string]*callback        // collection of subscription callbacks
+type subscriptionRegistry map[string]*callback // collection of subscription callbacks
 
 // Server represents a RPC server
 type Server struct {
@@ -86,7 +85,7 @@ type Server struct {
 type rpcRequest struct {
 	service  string
 	method   string
-	id       int64
+	id       interface{}
 	isPubSub bool
 	params   interface{}
 }
@@ -107,12 +106,12 @@ type ServerCodec interface {
 	ReadRequestHeaders() ([]rpcRequest, bool, RPCError)
 	// Parse request argument to the given types
 	ParseRequestArguments([]reflect.Type, interface{}) ([]reflect.Value, RPCError)
-	// Assemble success response
-	CreateResponse(int64, interface{}) interface{}
-	// Assemble error response
-	CreateErrorResponse(*int64, RPCError) interface{}
+	// Assemble success response, expects response id and payload
+	CreateResponse(interface{}, interface{}) interface{}
+	// Assemble error response, expects response id and error
+	CreateErrorResponse(interface{}, RPCError) interface{}
 	// Assemble error response with extra information about the error through info
-	CreateErrorResponseWithInfo(id *int64, err RPCError, info interface{}) interface{}
+	CreateErrorResponseWithInfo(id interface{}, err RPCError, info interface{}) interface{}
 	// Create notification response
 	CreateNotification(string, interface{}) interface{}
 	// Write msg to client.
@@ -121,51 +120,6 @@ type ServerCodec interface {
 	Close()
 	// Closed when underlying connection is closed
 	Closed() <-chan interface{}
-}
-
-// SubscriptionMatcher returns true if the given value matches the criteria specified by the user
-type SubscriptionMatcher func(interface{}) bool
-
-// SubscriptionOutputFormat accepts event data and has the ability to format the data before it is send to the client
-type SubscriptionOutputFormat func(interface{}) interface{}
-
-// defaultSubscriptionOutputFormatter returns data and is used as default output format for notifications
-func defaultSubscriptionOutputFormatter(data interface{}) interface{} {
-	return data
-}
-
-// Subscription is used by the server to send notifications to the client
-type Subscription struct {
-	sub    event.Subscription
-	match  SubscriptionMatcher
-	format SubscriptionOutputFormat
-}
-
-// NewSubscription create a new RPC subscription
-func NewSubscription(sub event.Subscription) Subscription {
-	return Subscription{sub, nil, defaultSubscriptionOutputFormatter}
-}
-
-// NewSubscriptionWithOutputFormat create a new RPC subscription which a custom notification output format
-func NewSubscriptionWithOutputFormat(sub event.Subscription, formatter SubscriptionOutputFormat) Subscription {
-	return Subscription{sub, nil, formatter}
-}
-
-// NewSubscriptionFiltered will create a new subscription. For each raised event the given matcher is
-// called. If it returns true the event is send as notification to the client, otherwise it is ignored.
-func NewSubscriptionFiltered(sub event.Subscription, match SubscriptionMatcher) Subscription {
-	return Subscription{sub, match, defaultSubscriptionOutputFormatter}
-}
-
-// Chan returns the channel where new events will be published. It's up the user to call the matcher to
-// determine if the events are interesting for the client.
-func (s *Subscription) Chan() <-chan *event.Event {
-	return s.sub.Chan()
-}
-
-// Unsubscribe will end the subscription and closes the event channel
-func (s *Subscription) Unsubscribe() {
-	s.sub.Unsubscribe()
 }
 
 // HexNumber serializes a number to hex format using the "%#x" format
@@ -251,43 +205,6 @@ func (h *HexNumber) Uint64() uint64 {
 
 func (h *HexNumber) BigInt() *big.Int {
 	return (*big.Int)(h)
-}
-
-type Number int64
-
-func (n *Number) UnmarshalJSON(data []byte) error {
-	input := strings.TrimSpace(string(data))
-
-	if len(input) >= 2 && input[0] == '"' && input[len(input)-1] == '"' {
-		input = input[1 : len(input)-1]
-	}
-
-	if len(input) == 0 {
-		*n = Number(latestBlockNumber.Int64())
-		return nil
-	}
-
-	in := new(big.Int)
-	_, ok := in.SetString(input, 0)
-
-	if !ok { // test if user supplied string tag
-		return fmt.Errorf(`invalid number %s`, data)
-	}
-
-	if in.Cmp(earliestBlockNumber) >= 0 && in.Cmp(maxBlockNumber) <= 0 {
-		*n = Number(in.Int64())
-		return nil
-	}
-
-	return fmt.Errorf("blocknumber not in range [%d, %d]", earliestBlockNumber, maxBlockNumber)
-}
-
-func (n *Number) Int64() int64 {
-	return *(*int64)(n)
-}
-
-func (n *Number) BigInt() *big.Int {
-	return big.NewInt(n.Int64())
 }
 
 var (

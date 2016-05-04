@@ -1,31 +1,29 @@
 // Copyright 2015 The go-ethereum Authors
-// This file is part of go-ethereum.
+// This file is part of the go-ethereum library.
 //
-// go-ethereum is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// go-ethereum is distributed in the hope that it will be useful,
+// The go-ethereum library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License
-// along with go-ethereum. If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package filters
 
 import (
-	"sync"
-	"time"
-
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
-
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -33,6 +31,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"golang.org/x/net/context"
 )
 
 var (
@@ -202,7 +202,7 @@ func (s *PublicFilterAPI) NewPendingTransactionFilter() (string, error) {
 }
 
 // newLogFilter creates a new log filter.
-func (s *PublicFilterAPI) newLogFilter(earliest, latest int64, addresses []common.Address, topics [][]common.Hash) (int, error) {
+func (s *PublicFilterAPI) newLogFilter(earliest, latest int64, addresses []common.Address, topics [][]common.Hash, callback func(log *vm.Log, removed bool)) (int, error) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 
@@ -219,15 +219,68 @@ func (s *PublicFilterAPI) newLogFilter(earliest, latest int64, addresses []commo
 	filter.SetAddresses(addresses)
 	filter.SetTopics(topics)
 	filter.LogCallback = func(log *vm.Log, removed bool) {
-		s.logMu.Lock()
-		defer s.logMu.Unlock()
-
-		if queue := s.logQueue[id]; queue != nil {
-			queue.add(vmlog{log, removed})
+		if callback != nil {
+			callback(log, removed)
+		} else {
+			s.logMu.Lock()
+			defer s.logMu.Unlock()
+			if queue := s.logQueue[id]; queue != nil {
+				queue.add(vmlog{log, removed})
+			}
 		}
 	}
 
 	return id, nil
+}
+
+func (s *PublicFilterAPI) Logs(ctx context.Context, args NewFilterArgs) (rpc.Subscription, error) {
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return nil, rpc.ErrNotificationsUnsupported
+	}
+
+	var (
+		externalId   string
+		subscription rpc.Subscription
+		err          error
+	)
+
+	if externalId, err = newFilterId(); err != nil {
+		return nil, err
+	}
+
+	// uninstall filter when subscription is unsubscribed/cancelled
+	if subscription, err = notifier.NewSubscription(func(string) {
+		s.UninstallFilter(externalId)
+	}); err != nil {
+		return nil, err
+	}
+
+	notifySubscriber := func(log *vm.Log, removed bool) {
+		rpcLog := toRPCLogs(vm.Logs{log}, removed)
+		if err := subscription.Notify(rpcLog); err != nil {
+			subscription.Cancel()
+		}
+	}
+
+	// from and to block number are not used since subscriptions don't allow you to travel to "time"
+	var id int
+	if len(args.Addresses) > 0 {
+		id, err = s.newLogFilter(-1, -1, args.Addresses, args.Topics, notifySubscriber)
+	} else {
+		id, err = s.newLogFilter(-1, -1, nil, args.Topics, notifySubscriber)
+	}
+
+	if err != nil {
+		subscription.Cancel()
+		return nil, err
+	}
+
+	s.filterMapMu.Lock()
+	s.filterMapping[externalId] = id
+	s.filterMapMu.Unlock()
+
+	return subscription, err
 }
 
 // NewFilterArgs represents a request to create a new filter.
@@ -278,7 +331,7 @@ func (args *NewFilterArgs) UnmarshalJSON(data []byte) error {
 					if decAddr, err := hex.DecodeString(strAddr); err == nil {
 						addresses = append(addresses, common.BytesToAddress(decAddr))
 					} else {
-						fmt.Errorf("invalid address given")
+						return fmt.Errorf("invalid address given")
 					}
 				} else {
 					return fmt.Errorf("invalid address on index %d", i)
@@ -291,10 +344,10 @@ func (args *NewFilterArgs) UnmarshalJSON(data []byte) error {
 			if decAddr, err := hex.DecodeString(singleAddr); err == nil {
 				addresses = append(addresses, common.BytesToAddress(decAddr))
 			} else {
-				fmt.Errorf("invalid address given")
+				return fmt.Errorf("invalid address given")
 			}
 		} else {
-			errors.New("invalid address(es) given")
+			return errors.New("invalid address(es) given")
 		}
 		args.Addresses = addresses
 	}
@@ -341,7 +394,7 @@ func (args *NewFilterArgs) UnmarshalJSON(data []byte) error {
 								parsedTopics[i] = []common.Hash{t}
 							}
 						} else {
-							fmt.Errorf("topic[%d][%d] not a string", i, j)
+							return fmt.Errorf("topic[%d][%d] not a string", i, j)
 						}
 					}
 				} else {
@@ -364,9 +417,9 @@ func (s *PublicFilterAPI) NewFilter(args NewFilterArgs) (string, error) {
 
 	var id int
 	if len(args.Addresses) > 0 {
-		id, err = s.newLogFilter(args.FromBlock.Int64(), args.ToBlock.Int64(), args.Addresses, args.Topics)
+		id, err = s.newLogFilter(args.FromBlock.Int64(), args.ToBlock.Int64(), args.Addresses, args.Topics, nil)
 	} else {
-		id, err = s.newLogFilter(args.FromBlock.Int64(), args.ToBlock.Int64(), nil, args.Topics)
+		id, err = s.newLogFilter(args.FromBlock.Int64(), args.ToBlock.Int64(), nil, args.Topics, nil)
 	}
 	if err != nil {
 		return "", err

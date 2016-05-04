@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -19,8 +18,7 @@ import (
 
 // Geth is a wrapper around the Ethereum Go client.
 type Geth struct {
-	stack    *node.Node      // Ethereum network node / protocol stack
-	keystore crypto.KeyStore // Keystore to retrieve private keys from
+	stack *node.Node // Ethereum network node / protocol stack
 }
 
 // New creates a Ethereum client, pre-configured to one of the supported networks.
@@ -42,18 +40,19 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 	// Configure the node's service container
 	stackConf := &node.Config{
 		DataDir:        datadir,
+		IPCPath:        "geth.ipc",
 		Name:           common.MakeName(NodeName, NodeVersion),
 		BootstrapNodes: bootnodes,
 		ListenAddr:     fmt.Sprintf(":%d", NodePort),
 		MaxPeers:       NodeMaxPeers,
 	}
 	// Configure the bare-bone Ethereum service
-	keystore := crypto.NewKeyStorePassphrase(filepath.Join(datadir, "keystore"), crypto.StandardScryptN, crypto.StandardScryptP)
 	ethConf := &eth.Config{
+		ChainConfig:    &core.ChainConfig{HomesteadBlock: params.MainNetHomesteadBlock},
 		FastSync:       true,
 		DatabaseCache:  64,
 		NetworkId:      int(network),
-		AccountManager: accounts.NewManager(keystore),
+		AccountManager: accounts.NewManager(filepath.Join(datadir, "keystore"), accounts.StandardScryptN, accounts.StandardScryptP),
 
 		// Blatantly initialize the gas oracle to the defaults from go-ethereum
 		GpoMinGasPrice:          new(big.Int).Mul(big.NewInt(50), common.Shannon),
@@ -68,7 +67,7 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 		ethConf.NetworkId = 2
 		ethConf.Genesis = core.TestNetGenesisBlock()
 		state.StartingNonce = 1048576 // (2**20)
-		params.HomesteadBlock = params.TestNetHomesteadBlock
+		ethConf.ChainConfig.HomesteadBlock = params.TestNetHomesteadBlock
 	}
 	// Assemble and return the protocol stack
 	stack, err := node.New(stackConf)
@@ -78,10 +77,7 @@ func New(datadir string, network EthereumNetwork) (*Geth, error) {
 	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) { return eth.New(ctx, ethConf) }); err != nil {
 		return nil, fmt.Errorf("ethereum service: %v", err)
 	}
-	return &Geth{
-		stack:    stack,
-		keystore: keystore,
-	}, nil
+	return &Geth{stack: stack}, nil
 }
 
 // Start boots up the Ethereum protocol, starts interacting with the P2P network
@@ -101,13 +97,6 @@ func (g *Geth) Stop() error {
 // then it makes things simpler.
 func (g *Geth) Stack() *node.Node {
 	return g.stack
-}
-
-// Keystore is a quick hack to expose the internal Ethereum keystore. We should
-//  remove this after the API interface is implemented, but until then it makes
-// things simpler.
-func (g *Geth) Keystore() crypto.KeyStore {
-	return g.keystore
 }
 
 // Attach connects to the running node's IPC exposed APIs, and returns a Go API

@@ -1,18 +1,18 @@
 // Copyright 2015 The go-ethereum Authors
-// This file is part of go-ethereum.
+// This file is part of the go-ethereum library.
 //
-// go-ethereum is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// go-ethereum is distributed in the hope that it will be useful,
+// The go-ethereum library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License
-// along with go-ethereum. If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package whisper
 
@@ -84,7 +84,7 @@ type NewFilterArgs struct {
 }
 
 // NewWhisperFilter creates and registers a new message filter to watch for inbound whisper messages.
-func (s *PublicWhisperAPI) NewFilter(args *NewFilterArgs) (*rpc.HexNumber, error) {
+func (s *PublicWhisperAPI) NewFilter(args NewFilterArgs) (*rpc.HexNumber, error) {
 	if s.w == nil {
 		return nil, whisperOffLineErr
 	}
@@ -171,7 +171,7 @@ type PostArgs struct {
 }
 
 // Post injects a message into the whisper network for distribution.
-func (s *PublicWhisperAPI) Post(args *PostArgs) (bool, error) {
+func (s *PublicWhisperAPI) Post(args PostArgs) (bool, error) {
 	if s.w == nil {
 		return false, whisperOffLineErr
 	}

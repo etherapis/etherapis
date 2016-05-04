@@ -1,4 +1,4 @@
-// Copyright 2014 The go-ethereum Authors
+// Copyright 2015 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -164,7 +164,7 @@ func (fs *FilterSystem) filterLoop() {
 			fs.filterMu.RLock()
 			for _, filter := range fs.logFilters {
 				if filter.LogCallback != nil && !filter.created.After(event.Time) {
-					for _, removedLog := range ev.Logs {
+					for _, removedLog := range filter.FilterLogs(ev.Logs) {
 						filter.LogCallback(removedLog, true)
 					}
 				}
