@@ -11,7 +11,7 @@
 		},
 		{
 			"ImportPath": "github.com/codegangsta/cli",
-			"Comment": "1.2.0-215-g0ab42fd",
+			"Comment": "v1.11.1-28-g0ab42fd",
 			"Rev": "0ab42fd482c27cf2c95e7794ad3bb2082c2ab2d7"
 		},
 		{
@@ -215,6 +215,11 @@
 			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
 		},
 		{
+			"ImportPath": "github.com/ethereum/go-ethereum/release",
+			"Comment": "v1.0.1-839-g2d7d7ef",
+			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
+		},
+		{
 			"ImportPath": "github.com/ethereum/go-ethereum/rlp",
 			"Comment": "v1.0.1-839-g2d7d7ef",
 			"Rev": "2d7d7ef2fe08db84b0cd44ad2ec820cc965d4cad"
@@ -245,15 +250,15 @@
 		},
 		{
 			"ImportPath": "github.com/gorilla/context",
-			"Rev": "1ea25387ff6f684839d82767c1733ff4d4d15d0a"
+			"Rev": "1c83b3eabd45b6d76072b66b746c20815fb2872d"
 		},
 		{
 			"ImportPath": "github.com/gorilla/mux",
-			"Rev": "c9e326e2bdec29039a3761c07bece13133863e1e"
+			"Rev": "26a6070f849969ba72b72256e9f14cf519751690"
 		},
 		{
 			"ImportPath": "github.com/gorilla/websocket",
-			"Rev": "c45a635370221f34fea2d5163fd156fcb4e38e8a"
+			"Rev": "b824a5d8536651ad2d690c17e270d58855dbfd02"
 		},
 		{
 			"ImportPath": "github.com/hashicorp/golang-lru",
@@ -423,23 +428,23 @@
 		},
 		{
 			"ImportPath": "golang.org/x/net/context",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html/atom",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/html/charset",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/net/websocket",
-			"Rev": "8968c61983e8f51a91b8c0ef25bf739278c89634"
+			"Rev": "3e8a7b0329d536af18e227bb21b6da4d1dbbe180"
 		},
 		{
 			"ImportPath": "golang.org/x/sys/unix",
@@ -507,11 +512,11 @@
 		},
 		{
 			"ImportPath": "golang.org/x/tools/go/ast/astutil",
-			"Rev": "fcde77432eb91f1389e8b5be6a4d018536ceac02"
+			"Rev": "6361b5799a8e5f2ed8a234717d217fd289451c53"
 		},
 		{
 			"ImportPath": "golang.org/x/tools/imports",
-			"Rev": "fcde77432eb91f1389e8b5be6a4d018536ceac02"
+			"Rev": "6361b5799a8e5f2ed8a234717d217fd289451c53"
 		},
 		{
 			"ImportPath": "gopkg.in/fatih/set.v0",
