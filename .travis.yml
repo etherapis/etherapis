@@ -1,0 +1,12 @@
+language: go
+go:
+  - 1.6.2
+install:
+  - go get golang.org/x/tools/cmd/cover
+before_script:
+  - go vet `go list ./... | grep -v /vendor/`
+script:
+  - go test -race `go list ./... | grep -v /vendor/`
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
+sudo: false

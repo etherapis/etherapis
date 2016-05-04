@@ -1,6 +1,6 @@
 # Gopher Gala - Ether APIs - [etherapis.io](http://etherapis.io)
 
-[![Join the chat at https://gitter.im/etherapis/etherapis](https://badges.gitter.im/etherapis/etherapis.svg)](https://gitter.im/etherapis/etherapis?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build Status](https://travis-ci.org/etherapis/etherapis.svg?branch=master)](https://travis-ci.org/etherapis/etherapis) [![Gitter Chat](https://badges.gitter.im/etherapis/etherapis.svg)](https://gitter.im/etherapis/etherapis?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 With the advent of cloud computing, everyone is trying to create some sort of online service that you can access and interact with via an online API. As the popular iOS slogan goes *"there's an app for that"*, in the API world it's a similar mantra: *"there's an API for that"*, irrelevant what you're trying to build: machine translation, mapping service, email sending, video rendering and streaming, etc., you'll find a large or small company that does exactly that, and the only thing you need to do is to hook into their system.
 
