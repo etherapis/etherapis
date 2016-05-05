@@ -9,9 +9,11 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
+	"strings"
 
 	"github.com/etherapis/etherapis/etherapis"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/jsre"
 	"github.com/gorilla/mux"
 	"gopkg.in/inconshreveable/log15.v2"
 )
@@ -19,7 +21,8 @@ import (
 // api is a wrapper around the etherapis components, exposing various parts of
 // each submodule.
 type api struct {
-	eapis *etherapis.EtherAPIs
+	eapis   *etherapis.EtherAPIs // EtherAPIs main object to exposed the methods of
+	console *jsre.JSRE           // JavaScript interpreter for the go-ethereum console
 }
 
 // newAPIServeMux creates an etherapis API endpoint to serve RESTful requests,
@@ -27,12 +30,14 @@ type api struct {
 func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	// Create an API to expose various internals
 	handler := &api{
-		eapis: eapis,
+		eapis:   eapis,
+		console: newREPLConsole(eapis),
 	}
 	// Register all the API handler endpoints
 	router := mux.NewRouter()
 	router.Handle(base, newStateServer(base, eapis))
 
+	router.HandleFunc(base+"console", handler.Console)
 	router.HandleFunc(base+"accounts", handler.Accounts)
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}", handler.Account)
 	router.HandleFunc(base+"accounts/{address:0(x|X)[0-9a-fA-F]{40}}/transactions", handler.Transactions)
@@ -40,6 +45,28 @@ func newAPIServeMux(base string, eapis *etherapis.EtherAPIs) *mux.Router {
 	router.HandleFunc(base+"services/{address:0(x|X)[0-9a-fA-F]{40}}/{id:[0-9]+}", handler.Services)
 
 	return router
+}
+
+// Console is the API endpoint that proxies frontend console command to the in-proc
+// go-ethereum console and tunnels the replies back.
+func (a *api) Console(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == "POST" && r.FormValue("action") == "exec":
+		res, err := a.console.Run(r.FormValue("command"))
+		if err != nil {
+			http.Error(w, strings.TrimSpace(err.Error()), http.StatusInternalServerError)
+			return
+		}
+		obj, _ := res.Export()
+		out, _ := json.MarshalIndent(obj, "", "  ")
+		w.Write(out)
+
+	case r.Method == "POST" && r.FormValue("action") == "hint":
+		w.Write([]byte(strings.Join(a.console.CompleteKeywords(r.FormValue("command")), "\n")))
+
+	default:
+		http.Error(w, "Unsupported method: "+r.Method, http.StatusMethodNotAllowed)
+	}
 }
 
 // Accounts retrieves the Ethereum accounts currently configured to be used by the

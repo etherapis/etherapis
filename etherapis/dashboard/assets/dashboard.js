@@ -101,12 +101,12 @@ var Dashboard = React.createClass({
 					<StaleChainWarning head={this.state.server.ethereum.head} threshold={180}/>
 
 					<Tutorial hide={this.state.section != "index"}/>
-					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"	} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
+					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
 					<Provider hide={this.state.section != "provider"} apiurl={this.props.apiurl + "/services"} accounts={this.state.server} active={this.state.account} services={this.state.server.services} loadaccs={this.loadAccount} switch={this.switchAccount}/>
 					<Subscriber hide={this.state.section != "subscriber"}/>
 					<Market hide={this.state.section != "market"} apiurl={this.props.apiurl + "/market"} market={this.state.server.market}/>
 					<div style={{height: this.state.footer}}></div>
-					<Console hide={!this.state.console}/>
+					<Console hide={!this.state.console} toggle={this.toggleConsole} apiurl={this.props.apiurl + "/console"} />
 				</div>
 				<TestnetFooter hide={false} height={this.state.footer}/>
 			</div>
@@ -191,17 +191,53 @@ var Console = React.createClass({
 		var jqconsole = $('#console-content').jqconsole('Welcome to the Geth console!\n\n', '⡢ ');
 		var startPrompt = function () {
 			jqconsole.Prompt(true, function (input) {
-				jqconsole.Write(input + '\n', 'jqconsole-output');
-				startPrompt();
-			});
-		};
+				var form = new FormData();
+				form.append("command", input);
+				form.append("action", "exec");
+
+				$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+					success: function(data) {
+						jqconsole.Write(data + '\n', 'jqconsole-output');
+						startPrompt();
+					}.bind(this),
+					error: function(xhr, status, err) {
+						jqconsole.Write(xhr.responseText, 'text-danger');
+						startPrompt();
+					}.bind(this),
+				});
+			}.bind(this));
+		}.bind(this);
+
 		// Replace the default indenting tab with command completion
 		jqconsole.SetControlKeyHandler(function(e) {
 			if (e.which === 9) {
-				jqconsole.Write(jqconsole.GetPromptText() + "lol\n", 'jqconsole-output');
+				var form = new FormData();
+				form.append("command", jqconsole.GetPromptText());
+				form.append("action", "hint");
+
+				$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+					success: function(data) {
+						if (/\r|\n/.exec(data)) {
+							jqconsole.Write('\n' + data + '\n', 'text-muted');
+						} else {
+							jqconsole.SetPromptText(data);
+						}
+						startPrompt();
+					}.bind(this),
+					error: function(xhr, status, err) {
+						jqconsole.Write(xhr.responseText, 'text-danger');
+						startPrompt();
+					}.bind(this),
+				});
 				return false;
 			}
-		});
+		}.bind(this));
+
+		// Close the console on Ctrl+D
+		jqconsole.RegisterShortcut('D', function() {
+			this.props.toggle();
+		}.bind(this));
+
 		startPrompt();
 	},
 	// render generates the floating console component.
