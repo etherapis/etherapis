@@ -1,0 +1,47 @@
+#console {
+	position: absolute;
+	bottom: 64px;
+	right: 64px;
+	width: 640px;
+	height: 480px;
+	z-index: 1000;
+}
+
+.jqconsole {
+	padding: 10px;
+}
+
+pre.jqconsole {
+	border: 0;
+	background-color: rgba(0, 0, 0, 0);
+}
+
+.jqconsole-cursor {
+	background-color: gray;
+}
+
+.jqconsole-blurred .jqconsole-cursor {
+	background-color: #1c1e22;
+}
+
+.jqconsole-header {
+	font-weight: bold;
+	color: #c8c8c8;
+}
+
+.jqconsole-prompt {
+	color: #5bc0de;
+}
+
+.jqconsole-old-prompt {
+	color: #7a8288;
+	font-weight: normal;
+}
+
+.jqconsole-input {
+	color: #7a8288;
+}
+
+.jqconsole-output {
+	color: #c8c8c8;
+}

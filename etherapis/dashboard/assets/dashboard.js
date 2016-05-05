@@ -9,6 +9,7 @@ var Dashboard = React.createClass({
 		return {
 			section: "index",
 			account: "",
+			console: false,
 
 			server: null,       // State data injected by the Ether APIs backend
 			alive:  Date.now(), // Timestamp (ms) of the last state update
@@ -49,17 +50,12 @@ var Dashboard = React.createClass({
 	loadSubscriber: function() { this.setState({section: "subscriber"}); },
 	loadMarket:     function() { this.setState({section: "market"}); },
 
+	// toggleConsole shows or hides the Geth console.
+	toggleConsole: function() { this.setState({console: !this.state.console}); },
+
 	// switchAccount switches out the currently active account to the one specified.
 	switchAccount: function(address) {
 		this.setState({account: address});
-	},
-
-	apiCall: function(url, success) {
-		$.ajax({url: url, dataType: 'json', cache: false, success: success,
-			error: function(xhr, status, err) {
-				console.error(url, status, err.toString());
-			}.bind(this)
-		});
 	},
 	render: function() {
 		// Do not render anything until we get our state from the backend
@@ -90,6 +86,13 @@ var Dashboard = React.createClass({
 								<li><a href="#" onClick={this.loadSubscriber}><i className="fa fa-cloud-download"></i> Subscribed</a></li>
 								<li><a href="#" onClick={this.loadMarket}><i className="fa fa-shopping-basket"></i> Market</a></li>
 							</ul>
+							<div className="navbar-inner" style={{height: "50px", float: "right"}}>
+								<div className="navbar-right">
+									<span className="navbar-text">
+										<a href="#" onClick={this.toggleConsole}><i className="fa fa-bug"></i></a>
+									</span>
+								</div>
+							</div>
 							<EthereumStats data={this.state.server.ethereum}/>
 						</div>
 					</div>
@@ -98,11 +101,12 @@ var Dashboard = React.createClass({
 					<StaleChainWarning head={this.state.server.ethereum.head} threshold={180}/>
 
 					<Tutorial hide={this.state.section != "index"}/>
-					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"	} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
+					<Accounts hide={this.state.section != "account"} apiurl={this.props.apiurl + "/accounts"} explorer={"http://testnet.etherscan.io/"} accounts={this.state.server.accounts} active={this.state.account} switch={this.switchAccount}/>
 					<Provider hide={this.state.section != "provider"} apiurl={this.props.apiurl + "/services"} accounts={this.state.server} active={this.state.account} services={this.state.server.services} loadaccs={this.loadAccount} switch={this.switchAccount}/>
 					<Subscriber hide={this.state.section != "subscriber"}/>
 					<Market hide={this.state.section != "market"} apiurl={this.props.apiurl + "/market"} market={this.state.server.market}/>
 					<div style={{height: this.state.footer}}></div>
+					<Console hide={!this.state.console} toggle={this.toggleConsole} apiurl={this.props.apiurl + "/console"} />
 				</div>
 				<TestnetFooter hide={false} height={this.state.footer}/>
 			</div>
@@ -146,6 +150,104 @@ var TestnetFooter = React.createClass({
 					<div className="alert alert-info text-center" role="alert" style={{marginBottom: 0}}>
 						<i className="fa fa-info-circle"></i> This instance is currently configured to use the <strong>test network</strong>. Consider everything here a consequence free playground.
 					</div>
+			</div>
+		)
+	}
+});
+
+// Console is a UI component that displays a Geth console attached to the
+// underlying node.
+var Console = React.createClass({
+	// getInitialState sets the zero values of the component.
+	getInitialState: function() {
+		return {
+			hidden:      true,
+			initialized: false,
+		};
+	},
+	// componentWillReceiveProps runs when the console is being toggled on or off.
+	// The method resets the init flag to false to force a initializing any newly
+	// created elements.
+	componentWillReceiveProps: function(props) {
+		if (props.hide != this.state.hidden) {
+			this.setState({hidden: props.hide, initialized: false});
+		}
+	},
+	// componentDidUpdate is invoked when the status component changes after a load. It
+	// initializes the console to a draggable and resizable component, also starting
+	// up the actual internal console plugin.
+	componentDidUpdate: function() {
+		// Only initialize the console if we've just displayed it
+		if (this.props.hide || this.state.initialized) {
+			return
+		}
+		this.setState({initialized: true});
+
+		// Make the console UI a floating live dialog window
+	  $("#console").draggable();
+		$("#console").resizable();
+
+		// Initialize the content with the console plugin
+		var jqconsole = $('#console-content').jqconsole('Welcome to the Geth console!\n\n', '⡢ ');
+		var startPrompt = function () {
+			jqconsole.Prompt(true, function (input) {
+				var form = new FormData();
+				form.append("command", input);
+				form.append("action", "exec");
+
+				$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+					success: function(data) {
+						jqconsole.Write(data + '\n', 'jqconsole-output');
+						startPrompt();
+					}.bind(this),
+					error: function(xhr, status, err) {
+						jqconsole.Write(xhr.responseText, 'text-danger');
+						startPrompt();
+					}.bind(this),
+				});
+			}.bind(this));
+		}.bind(this);
+
+		// Replace the default indenting tab with command completion
+		jqconsole.SetControlKeyHandler(function(e) {
+			if (e.which === 9) {
+				var form = new FormData();
+				form.append("command", jqconsole.GetPromptText());
+				form.append("action", "hint");
+
+				$.ajax({type: "POST", url: this.props.apiurl, cache: false, data: form, processData: false, contentType: false,
+					success: function(data) {
+						if (/\r|\n/.exec(data)) {
+							jqconsole.Write('\n' + data + '\n', 'text-muted');
+						} else {
+							jqconsole.SetPromptText(data);
+						}
+						startPrompt();
+					}.bind(this),
+					error: function(xhr, status, err) {
+						jqconsole.Write(xhr.responseText, 'text-danger');
+						startPrompt();
+					}.bind(this),
+				});
+				return false;
+			}
+		}.bind(this));
+
+		// Close the console on Ctrl+D
+		jqconsole.RegisterShortcut('D', function() {
+			this.props.toggle();
+		}.bind(this));
+
+		startPrompt();
+	},
+	// render generates the floating console component.
+	render: function() {
+		if (this.props.hide) {
+			return null
+		}
+		return (
+			<div id="console" className="well">
+				<div id="console-content"></div>
 			</div>
 		)
 	}
